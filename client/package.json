@@ -1,0 +1,21 @@
+{
+  "name": "company-ai-tools-client",
+  "version": "5.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "test": "node --test src/*.test.js"
+  },
+  "dependencies": {
+    "@vitejs/plugin-react": "^6.0.2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "react-markdown": "^10.1.0",
+    "react-router-dom": "^7.17.0",
+    "remark-gfm": "^4.0.1",
+    "vite": "^8.0.16"
+  }
+}
