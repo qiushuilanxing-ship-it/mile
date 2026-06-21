@@ -8,3 +8,11 @@ server/data/*.db-wal
 .env
 .env.*
 !.env.example
+.env
+server/.env
+client/.env
+node_modules/
+client/node_modules/
+server/node_modules/
+dist/
+client/dist/
