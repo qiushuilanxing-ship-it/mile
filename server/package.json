@@ -4,10 +4,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node --watch index.js",
+    "dev": "node --watch --watch-path=.env --watch-path=index.js --watch-path=services --watch-path=audit-batches.js --watch-path=coze-stream.js --watch-path=database.js --watch-path=douyin-ai-audit.js --watch-path=douyin-audit.js --watch-path=generation-engine.js --watch-path=logger.js --watch-path=request-guard.js index.js",
     "start": "node index.js",
     "test": "node --test",
-    "acceptance": "node acceptance-check.js"
+    "acceptance": "node acceptance-check.js",
+    "build:quality-rules": "node scripts/build-quality-rules.js"
   },
   "engines": {
     "node": ">=18"
@@ -16,6 +17,7 @@
     "better-sqlite3": "^12.10.0",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
-    "multer": "^2.1.1"
+    "multer": "^2.1.1",
+    "xlsx": "^0.18.5"
   }
 }

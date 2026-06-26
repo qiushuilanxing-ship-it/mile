@@ -1,0 +1,2186 @@
+[
+  {
+    "rule_id": "ML-ALL-A1-001",
+    "rule_name": "商品参数与官网/商品详情不一致",
+    "category": "A 宣传错误",
+    "sub_category": "A1 参数错误",
+    "risk_level": "高",
+    "keywords": [
+      "型号错写",
+      "品牌错写",
+      "尺寸容量错写",
+      "功能错写",
+      "SKU不匹配"
+    ],
+    "standard": "视频中出现与商品详情页/官网参数不一致的品牌、型号、规格、尺寸、功能、颜色、价格等信息",
+    "risk_reason": "核心参数错误容易造成虚假宣传和售后纠纷；公司规范：确定违规且24h内未下架/未回复追加扣分",
+    "rectification": "下架或修改错误信息，重新核对商品资料；把错误参数替换为详情页一致参数；不确定时写“以商品详情页为准”；按官网/商品详情页修正参数",
+    "examples": [
+      "把小米/米家混用；把128G写成256G；宣传不在售型号",
+      "统一以商品详情页/官网参数为准；多SKU需对应展示",
+      "产品型号、品牌或容量与官网详情不一致"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "标题、字幕、贴片、口播、商品卡",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品参数表比对",
+    "manual_review": "商品参数需人工或后台数据复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-A2-001",
+    "rule_name": "承诺绝对效果/无法证明效果",
+    "category": "A 宣传错误",
+    "sub_category": "A2 虚假宣传",
+    "risk_level": "高",
+    "keywords": [
+      "包治",
+      "一定有效",
+      "永久有效",
+      "一次见效",
+      "保证健康",
+      "100%有效",
+      "绝对安全",
+      "绝对",
+      "永久"
+    ],
+    "standard": "承诺无法证明的功效、效果、收益、服务时效或使用结果，造成消费者误解",
+    "risk_reason": "抖音虚假宣传相关规则+公司扣分",
+    "rectification": "删除绝对承诺，改为客观体验或参数说明；改为“效果因使用场景不同有所差异，具体以实际体验为准”",
+    "examples": [
+      "宣传电视可预防近视；一个操作让老人身体健康；清洁剂瞬间去顽固污渍",
+      "使用客观描述并说明适用条件/以实际体验为准"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、标题、贴片、演示画面",
+    "ai_detectability": "高",
+    "ai_detection_method": "ASR+OCR+风险词库+大模型判断",
+    "manual_review": "功效类/健康类必须人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-A3-001",
+    "rule_name": "未经核实的数据/功效夸大",
+    "category": "A 宣传错误",
+    "sub_category": "A3 夸大宣传",
+    "risk_level": "高",
+    "keywords": [
+      "100%有效",
+      "绝对安全",
+      "省电X倍",
+      "清洁翻新",
+      "暴力测试证明质量",
+      "绝对"
+    ],
+    "standard": "加入未经核实的数据或夸大产品功效的字幕/特效/对比演示",
+    "risk_reason": "虚假宣传/效果虚假风险",
+    "rectification": "删除夸张数据/特效，补充数据来源或改为真实场景演示；改为“在正常使用场景下，可改善/辅助……”",
+    "examples": [
+      "用暴力踩钉子证明鞋子质量；通过夸张磨皮展示化妆品效果",
+      "引用数据需有来源；演示应贴近真实使用场景"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、特效、口播、贴片、对比画面",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+多模态抽帧+人工复核",
+    "manual_review": "夸张演示和后期特效需人工判定",
+    "source_url": "https://www.xiaoduoai.com/blog/5058.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-A4-001",
+    "rule_name": "账号/平台/直播间在售商品不匹配",
+    "category": "A 宣传错误",
+    "sub_category": "A4 发错账号/平台",
+    "risk_level": "高",
+    "keywords": [
+      "账号错发",
+      "直播间无该商品",
+      "商品卡挂错"
+    ],
+    "standard": "视频发布到错误账号/平台，或宣传商品不属于对应直播间在售产品",
+    "risk_reason": "公司扣分并要求24h处理",
+    "rectification": "下架错发视频，重新发布到正确账号/平台；发布前执行账号-商品-直播间三项校验",
+    "examples": [
+      "空调账号发布手机产品视频；直播间没有视频宣传的商品",
+      "发布前核对账号、平台、直播间SKU和商品卡"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "发布账号、商品卡、视频内容、直播间在售商品",
+    "ai_detectability": "部分",
+    "ai_detection_method": "平台账号元数据+商品卡比对+人工复核",
+    "manual_review": "需运营核实发布账号和在售商品",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B1-001",
+    "rule_name": "核心卖点区域出现错字或高风险词",
+    "category": "B 文案脚本",
+    "sub_category": "B1 核心卖点错别字/违禁词/极限词",
+    "risk_level": "高",
+    "keywords": [
+      "全网最低",
+      "全年最低",
+      "最优惠",
+      "第一",
+      "顶级",
+      "绝对",
+      "永久",
+      "王炸",
+      "首选"
+    ],
+    "standard": "涉及产品名称、核心卖点、活动价格等关键内容出现错别字、违禁词或极限词",
+    "risk_reason": "“全年至低价”属于绝对化价格表达，且错字影响专业度；公司扣分；广告禁用词/虚假宣传风险",
+    "rectification": "修正错字、删除违禁词，替换为合规表达；“全年最低价”改为“限时活动价，以直播间实际价格为准”；删除绝对化、唯一性、无法证明表述；“限时活动价，具体以直播间实际价格为准”；改为“618限时活动价，到手价以直播间为准”",
+    "examples": [
+      "封面写“全年至低价”；产品名错别字；卖点参数错写",
+      "使用非绝对化表达，核心卖点逐字校对",
+      "封面写“全年至低价”，价格贴片突出“¥701”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "标题、封面、卖点字幕、贴片、口播",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+词库匹配+错别字校对",
+    "manual_review": "极限词可自动判，语义夸大需复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B2-001",
+    "rule_name": "非核心文案区域错字/高风险词",
+    "category": "B 文案脚本",
+    "sub_category": "B2 普通错别字/违禁词",
+    "risk_level": "中",
+    "keywords": [
+      "手慢无",
+      "第一",
+      "最",
+      "XX之王",
+      "顶",
+      "鼎",
+      "领",
+      "极",
+      "绝",
+      "好评返现",
+      "返现"
+    ],
+    "standard": "普通文案中出现错别字、违禁词、极限词或影响理解的错误表达",
+    "risk_reason": "公司扣分；广告禁用词/违规营销风险",
+    "rectification": "修正文案，替换风险词；“最划算”改为“更优惠”，“第一选择”改为“不错的选择”",
+    "examples": [
+      "字幕出现“手慢无”“静音”等错误或风险表达",
+      "普通文案也需去极限化、去误导"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "普通字幕、口播文案、角标、评论引导语",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+词库匹配+错别字校对",
+    "manual_review": "低风险错字可不复核，高风险词需复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B3-001",
+    "rule_name": "文案或口播含辱骂歧视",
+    "category": "B 文案脚本",
+    "sub_category": "B3 侮辱歧视/不友善内容",
+    "risk_level": "高",
+    "keywords": [
+      "地域黑",
+      "性别歧视",
+      "辱骂",
+      "侮辱",
+      "偷拍视频",
+      "录音"
+    ],
+    "standard": "出现地域、性别、年龄、职业等歧视，辱骂、攻击、贬损他人，或传播他人未同意的私下谈话",
+    "risk_reason": "公司扣分；发布不当信息风险",
+    "rectification": "删除不友善内容，重新录制口播/字幕；改为客观描述，不使用人群标签攻击",
+    "examples": [
+      "口播嘲讽某地域用户；剪入他人私下谈话并传播",
+      "使用中性、尊重表达；未经授权不传播他人谈话"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、弹幕引导、贴片",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+敏感词库+人工复核",
+    "manual_review": "歧视/辱骂语义需人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B4-001",
+    "rule_name": "低俗两性暗示或违背良好风尚",
+    "category": "B 文案脚本",
+    "sub_category": "B4 违背社会风尚/两性暗示",
+    "risk_level": "高",
+    "keywords": [
+      "暧昧暗示",
+      "低俗挑逗",
+      "擦边",
+      "成人化动作"
+    ],
+    "standard": "使用两性暗示、擦边、低俗梗、违背社会公序良俗内容吸引流量",
+    "risk_reason": "公司扣分；低俗内容风险",
+    "rectification": "删除低俗暗示内容，改为正常使用场景；改为家庭/门店/真实体验式表达",
+    "examples": [
+      "用两性暗示解释家电功能；低俗台词引导互动",
+      "围绕产品功能和真实场景表达"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、画面动作、服化道",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态抽帧+ASR+人工复核",
+    "manual_review": "擦边内容必须人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B5-001",
+    "rule_name": "文案照抄无创新",
+    "category": "B 文案脚本",
+    "sub_category": "B5 文案抄袭",
+    "risk_level": "中",
+    "keywords": [
+      "搬运文案",
+      "同款开头",
+      "同款话术",
+      "结构高度相似"
+    ],
+    "standard": "直接照抄网络文案或对标视频，改动内容低于30%",
+    "risk_reason": "公司扣分；侵权/搬运风险",
+    "rectification": "重新改写文案，至少更换场景、冲突、台词和产品卖点；先拆结构再原创表达，不直接复制原句",
+    "examples": [
+      "照搬竞品短视频脚本，仅替换产品名",
+      "保留创意结构但重写场景、台词、卖点和节奏"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "脚本文案、字幕、口播结构",
+    "ai_detectability": "部分",
+    "ai_detection_method": "文本相似度检测+人工复核",
+    "manual_review": "需人工确认是否原创/二创合理",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B6-001",
+    "rule_name": "AI生成内容未声明",
+    "category": "C AI内容规范",
+    "sub_category": "B6 AI内容未标注",
+    "risk_level": "中",
+    "keywords": [
+      "AI生成图",
+      "AI数字人",
+      "AI配音",
+      "AI合成商品演示"
+    ],
+    "standard": "使用AI生成画面、配音、数字人、合成场景等但无任何AI相关说明，发布页未勾选AI声明",
+    "risk_reason": "AI内容可能误导为真实拍摄；公司扣分；平台AI内容合规风险",
+    "rectification": "补充AI内容标注或重新使用实拍素材；增加“画面为AI辅助创作，仅作展示参考”；补充AI声明，避免误导实拍；“画面为AI辅助创作，仅作展示参考”；补充AI声明或改为实拍素材",
+    "examples": [
+      "AI生成家电使用场景，但未标注AI辅助创作",
+      "在画面/文案或发布页按要求进行AI内容声明",
+      "AI生成产品演示画面未勾选AI声明"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "AI画面、AI配音、数字人、AI文案、发布页声明",
+    "ai_detectability": "部分",
+    "ai_detection_method": "多模态识别+发布设置核查+人工复核",
+    "manual_review": "AI识别不稳定，需人工确认",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B7-001",
+    "rule_name": "AI内容虚构商品信息",
+    "category": "C AI内容规范",
+    "sub_category": "B7 AI内容虚假宣传",
+    "risk_level": "高",
+    "keywords": [
+      "虚构重量",
+      "尺寸",
+      "功能",
+      "便携性",
+      "使用效果",
+      "环境适配"
+    ],
+    "standard": "AI生成内容中的产品重量、尺寸、功能、便携性、使用效果等与实际不符，造成误导",
+    "risk_reason": "公司扣分；虚假宣传风险",
+    "rectification": "删除或替换不真实AI画面，补充真实参数；改为“示意画面，实际功能以商品详情页为准”；删除或替换AI画面，按真实功能重做；“示意画面不代表实际功能，实际以商品详情页为准”",
+    "examples": [
+      "AI画面显示单人搬大型家电轻松奔跑；AI生成不存在的产品功能",
+      "AI画面只作创意展示，不改变产品参数和使用边界"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "AI画面、字幕、口播、商品演示",
+    "ai_detectability": "部分",
+    "ai_detection_method": "多模态+OCR/ASR+商品参数表比对",
+    "manual_review": "AI画面真实性需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-B8-001",
+    "rule_name": "AI或特效动作违背现实物理",
+    "category": "C AI内容规范",
+    "sub_category": "B8 AI场景/动作不符合实际",
+    "risk_level": "中",
+    "keywords": [
+      "飞天",
+      "穿墙",
+      "夸张搬运",
+      "危险动作",
+      "产品不按说明使用"
+    ],
+    "standard": "出现违背现实或误导正常使用方式的动作/场景，如飞天、穿墙、追逐、单人搬大型家电奔跑",
+    "risk_reason": "公司扣分；虚假宣传/安全风险",
+    "rectification": "替换为真实可发生场景，避免误导使用方式；改为“多人协助搬运/门店实拍/正常安装使用”；删除或替换AI画面，按真实功能重做；“示意画面不代表实际功能，实际以商品详情页为准”",
+    "examples": [
+      "AI生成一人扛冰箱跑步；家电漂浮移动",
+      "使用真实搬运、正常使用、居家/门店实景，创意不脱离现实"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "视频画面、人物动作、产品使用动作",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态抽帧+人工复核",
+    "manual_review": "需要人工判断是否创意过界",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C1-001",
+    "rule_name": "素材与标题/型号/商品不一致",
+    "category": "D 画面音乐",
+    "sub_category": "C1 素材错误",
+    "risk_level": "高",
+    "keywords": [
+      "素材型号不符",
+      "同尺寸不同型号",
+      "品牌混用",
+      "旧款新款混用"
+    ],
+    "standard": "使用错误商品素材，如新旧款、不同型号、不同尺寸、其他品牌素材与标题不符",
+    "risk_reason": "公司扣分；虚假宣传风险",
+    "rectification": "替换正确素材或修改标题/商品卡；素材、标题、商品卡三者保持一致；“视频展示为X型号，详情以商品页为准”",
+    "examples": [
+      "标题写小米新款，画面为旧款或米家另一型号",
+      "建立商品素材库，发布前按SKU核对"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "视频画面、商品外观、标题、商品卡",
+    "ai_detectability": "部分",
+    "ai_detection_method": "多模态识图+商品图比对+人工复核",
+    "manual_review": "型号细节需人工/商品库复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C2-001",
+    "rule_name": "未授权素材/字体/音乐/达人明星侵权",
+    "category": "D 画面音乐",
+    "sub_category": "C2 侵权",
+    "risk_level": "高",
+    "keywords": [
+      "明星脸",
+      "达人搬运",
+      "影视综片段",
+      "未授权字体",
+      "熊猫头表情包",
+      "非剪映可商用音乐"
+    ],
+    "standard": "使用未授权代言人、明星、艺人、达人内容或未授权字体、音乐、影视片段、表情包等",
+    "risk_reason": "存在版权和肖像权风险；公司扣分；侵权行为/内容下架风险",
+    "rectification": "替换授权素材，保留授权证明；使用公司素材库/平台可商用素材；替换授权素材，保存授权证明；替换授权素材/保留授权证明",
+    "examples": [
+      "剪入明星采访片段带货；使用未授权字体做封面",
+      "使用公司授权素材库、剪映/平台可用音乐、商用授权字体",
+      "剪入明星、达人、影视或未授权音乐字体"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面人物、音乐、字体、影视片段、表情包、达人视频",
+    "ai_detectability": "部分",
+    "ai_detection_method": "素材库比对+OCR字体识别+音频指纹+人工复核",
+    "manual_review": "侵权判断需人工确认授权",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C3-001",
+    "rule_name": "二维码/平台标志等未打码",
+    "category": "D 画面音乐",
+    "sub_category": "C3 敏感画面未打码",
+    "risk_level": "高",
+    "keywords": [
+      "二维码",
+      "微信",
+      "QQ",
+      "微博",
+      "京东",
+      "淘宝",
+      "CCTV",
+      "手机号",
+      "站外链接",
+      "站外"
+    ],
+    "standard": "出现二维码、站外平台标志、其他平台页面、个人联系方式等未打码",
+    "risk_reason": "展示站外交易入口，可能导流私域；存在诱导第三方、侵权或品牌风险；公司扣分；诱导第三方风险",
+    "rectification": "打码/裁切/替换画面，避免站外导流嫌疑；保留抖音/店铺内链，不展示站外二维码；打码、裁切或替换画面；保留平台内入口，不展示站外二维码；打码或删除二维码/站外页面",
+    "examples": [
+      "背景手机屏幕露出淘宝/京东页面；二维码未打码",
+      "所有站外标志、联系方式和二维码打码或替换",
+      "画面展示二维码/站外平台页面",
+      "视频中出现淘宝/京东/微博/CCTV等标志未打码"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面、背景、贴片、手机屏幕",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+二维码检测+Logo识别+多模态",
+    "manual_review": "命中可自动初筛，特殊场景需复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C4-001",
+    "rule_name": "画面低质影响品牌形象",
+    "category": "D 画面音乐",
+    "sub_category": "C4 画质差/低清素材",
+    "risk_level": "中",
+    "keywords": [
+      "低清",
+      "模糊",
+      "抖动",
+      "压缩严重",
+      "素材拉伸",
+      "比例错误"
+    ],
+    "standard": "使用不恰当拍摄或网络素材，画质低清、过曝、严重抖动、主体模糊",
+    "risk_reason": "公司扣分；低质量内容风险",
+    "rectification": "替换高清素材或重新导出；统一导出1080p及以上，避免拉伸变形",
+    "examples": [
+      "下载二次压缩素材导致字幕和产品模糊",
+      "使用原始高清素材，导出分辨率和码率达标"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "视频分辨率、清晰度、抖动、曝光、网络素材",
+    "ai_detectability": "中",
+    "ai_detection_method": "视频质量检测+多模态+人工复核",
+    "manual_review": "画质阈值需人工确认",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C5-001",
+    "rule_name": "字幕不可读或遮挡主体",
+    "category": "D 画面音乐",
+    "sub_category": "C5 字幕模糊/重叠",
+    "risk_level": "中",
+    "keywords": [
+      "字幕重叠",
+      "贴片遮脸",
+      "低对比",
+      "字体太小",
+      "颜色混乱"
+    ],
+    "standard": "字体模糊、重叠、被遮挡、超出安全区，影响理解或遮挡产品/人物",
+    "risk_reason": "影响观看并造成信息不清；公司扣分",
+    "rectification": "调整字幕位置、字号、层级和背景透明度；控制贴片高度，保留下方透明区/安全区；缩小贴片、调整安全区",
+    "examples": [
+      "直播贴片挡住主播脸；卖点字重叠无法读",
+      "字幕在安全区，字号清晰，避免遮挡主体",
+      "直播贴片高度过大遮挡主播脸/字幕重叠"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、贴片、价格牌、卖点文字",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR识别置信度+画面安全区检测",
+    "manual_review": "复杂遮挡需人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C6-001",
+    "rule_name": "音频质量不达标",
+    "category": "D 画面音乐",
+    "sub_category": "C6 配音模糊/无声音",
+    "risk_level": "中",
+    "keywords": [
+      "无声",
+      "爆音",
+      "混响严重",
+      "背景音盖人声"
+    ],
+    "standard": "配音模糊、音量过低、无声音、人声被背景音乐覆盖",
+    "risk_reason": "公司扣分",
+    "rectification": "重新配音/降噪/调低背景音乐；保证口播清晰，背景音乐不盖人声",
+    "examples": [
+      "视频上传后口播缺失或配音听不清",
+      "导出前检查音量峰值和可懂度"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "配音、人声、背景音乐、口播",
+    "ai_detectability": "高",
+    "ai_detection_method": "音频响度检测+ASR识别置信度",
+    "manual_review": "嘈杂场景需人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-C7-001",
+    "rule_name": "脚本结构照搬",
+    "category": "D 画面音乐",
+    "sub_category": "C7 脚本抄袭",
+    "risk_level": "中",
+    "keywords": [
+      "镜头结构一致",
+      "口播照搬",
+      "分镜相同"
+    ],
+    "standard": "脚本照抄无创新，改动小于30%，存在搬运/侵权风险",
+    "risk_reason": "公司扣分；搬运侵权风险",
+    "rectification": "重写脚本并替换核心创意表达；保留卖点，改变场景、人物、冲突和台词",
+    "examples": [
+      "把对标视频逐字改产品名后发布",
+      "拆创意结构后重新写场景和台词"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "脚本结构、镜头顺序、口播台词",
+    "ai_detectability": "部分",
+    "ai_detection_method": "文本相似度+镜头相似度+人工复核",
+    "manual_review": "需人工判断是否合理二创",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-002",
+    "rule_name": "商品使用效果与实际不一致",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：效果虚假",
+    "risk_level": "高",
+    "keywords": [
+      "省电效果",
+      "清洁效果",
+      "显瘦效果",
+      "磨皮特效",
+      "暴力测试"
+    ],
+    "standard": "宣传商品效果与实际效果不一致，或用后期、剪辑、特效夸大使用效果",
+    "risk_reason": "低于商品详情页功率范围，夸大省电效果；按最低功率宣传，夸大省电效果；效果展示不实，过度提高用户预期；后期特效改变真实效果，误导用户；通过剪辑/特效夸大商品效果；暴力测试场景夸张且可能误导质量；抖音虚假宣传相关处置",
+    "rectification": "删除虚假效果展示，补充真实条件；“平均每小时耗电约X-X度，视档位而定”；替换真实场景或补充测试条件；“以下为正常使用场景展示，效果以实际体验为准”；按功率区间描述耗电量；说明不同功率档位的耗电范围；补充测试条件，避免保证结果；改为真实光线下实拍展示；使用真实穿搭对比并说明尺码；替换为安全合规测试或官方数据",
+    "examples": [
+      "取暖器宣传“两小时不到1度电”；用夸张磨皮展示美妆效果",
+      "按真实功率/实验条件/实际效果描述，不用特效夸大",
+      "主播宣传取暖器“两小时不到1度电”",
+      "主播宣传电暖气平均3小时一度电",
+      "清洁产品宣传极短时间清除顽固墨水印",
+      "使用夸张磨皮特效展示化妆品效果",
+      "通过特效把肚子放大再突然显瘦，夸大裤子显瘦效果",
+      "通过暴力踩钉子证明鞋子质量"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、演示画面、对比画面",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+多模态+商品参数比对",
+    "manual_review": "演示真实性需人工复核",
+    "source_url": "https://www.xiaoduoai.com/blog/5058.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-003",
+    "rule_name": "宣称商品具有未证明功效",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：功效虚假",
+    "risk_level": "高",
+    "keywords": [
+      "治愈",
+      "预防疾病",
+      "调理三高",
+      "护眼防近视",
+      "包治",
+      "治疗"
+    ],
+    "standard": "宣称商品具有医疗、保健、治疗、预防等无法证明或不允许宣传的功效",
+    "risk_reason": "抖音虚假宣传相关处置",
+    "rectification": "删除治疗/预防类话术；改为“放松体验/辅助缓解疲劳，非医疗用途”；删除治疗和保证结果，改为客观体验；“实际体验因使用场景和个人情况不同有所差异”",
+    "examples": [
+      "普通按摩仪宣传治疗颈椎病；电视宣传预防近视",
+      "仅描述产品合法功能和使用体验，不涉及疾病治疗"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "标题、口播、字幕、详情贴片",
+    "ai_detectability": "高",
+    "ai_detection_method": "ASR+OCR+禁词库+类目资质校验",
+    "manual_review": "健康/医疗功效需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-004",
+    "rule_name": "材质品质宣传与实物不符",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：材质/品质虚假",
+    "risk_level": "高",
+    "keywords": [
+      "纯铜",
+      "真皮",
+      "食品级",
+      "军工级",
+      "A级",
+      "原厂",
+      "正品保证"
+    ],
+    "standard": "宣传商品材质、品质、等级、认证与实际不一致",
+    "risk_reason": "虚假宣传风险",
+    "rectification": "删除未证实材质/品质词，补充证明材料；改为详情页已有材质描述",
+    "examples": [
+      "普通塑料宣传为食品级材质；普通配件宣称原厂",
+      "以商品检测报告/详情页资质为准"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品演示、商品标题",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品属性/资质库比对",
+    "manual_review": "材质真实性需资料复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-005",
+    "rule_name": "数量规格与实际不符",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：大小/重量/数量虚假",
+    "risk_level": "高",
+    "keywords": [
+      "大容量",
+      "超轻",
+      "买一送十",
+      "X件套",
+      "XX斤",
+      "XXL"
+    ],
+    "standard": "宣传大小、重量、数量、容量、套餐件数与实际SKU不符",
+    "risk_reason": "虚假宣传/价格误导风险",
+    "rectification": "按实际SKU重写数量/规格；“页面展示款为X规格，具体以商品详情页为准”",
+    "examples": [
+      "口播“买一送十”但商品卡为单件；容量夸大",
+      "多SKU明确对应规格和数量"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、口播、包装展示、SKU",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+SKU表比对",
+    "manual_review": "复杂套餐需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-006",
+    "rule_name": "款颜/图案/形状宣传不符",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：款式/颜色等信息不一致",
+    "risk_level": "高",
+    "keywords": [
+      "款式不一致",
+      "颜色不一致",
+      "图案不一致",
+      "拍A发B"
+    ],
+    "standard": "主图、视频、口播展示的款式、颜色、图案、形状等与消费者实际收到或商品详情不符",
+    "risk_reason": "虚假宣传/欺诈发货风险",
+    "rectification": "替换正确展示画面或商品卡；明确“视频展示为X色，拍下请选对应SKU”",
+    "examples": [
+      "展示白色款，商品卡/实际发黑色款；视频展示高级款实际低配",
+      "展示款和商品卡SKU必须一致"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面、字幕、商品卡、封面",
+    "ai_detectability": "部分",
+    "ai_detection_method": "多模态识图+商品图比对",
+    "manual_review": "颜色/款式需人工确认",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-007",
+    "rule_name": "权威背书虚假",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：专利/荣誉/销量/研发单位虚假",
+    "risk_level": "高",
+    "keywords": [
+      "专利",
+      "国家认证",
+      "销量第一",
+      "行业第一",
+      "研发院",
+      "官方推荐",
+      "第一"
+    ],
+    "standard": "宣传专利、荣誉、销量排名、研发单位、测评指数等但无法证明或与实际不符",
+    "risk_reason": "虚假宣传/广告禁用词风险",
+    "rectification": "删除无法证明的权威背书；改为“平台热销款/用户反馈较多”等谨慎表达",
+    "examples": [
+      "宣称“国家认证”“销量第一”但无证明材料",
+      "提供可核验资质和完整限定条件"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、贴片、口播、包装展示",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+权威词库+资料复核",
+    "manual_review": "必须人工核认证据",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-008",
+    "rule_name": "产地或跨境属性误导",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：跨境/免税/产地虚假",
+    "risk_level": "高",
+    "keywords": [
+      "原装进口",
+      "免税",
+      "保税仓",
+      "海外直邮",
+      "产地XX",
+      "跨境专供"
+    ],
+    "standard": "虚构商品产地、跨境、免税、保税仓、进口属性等，或与商品详情页不一致",
+    "risk_reason": "虚假宣传风险",
+    "rectification": "删除不实跨境/免税/产地表达；改为“发货地/产地以商品详情页为准”",
+    "examples": [
+      "普通国产商品宣传海外直邮；非免税商品宣传免税",
+      "以详情页资质、发货仓和供应链资料为准"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品包装、发货地描述",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+商品属性/仓库信息比对",
+    "manual_review": "资质类需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-009",
+    "rule_name": "物流/发货信息与详情不一致",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：物流虚假",
+    "risk_level": "高",
+    "keywords": [
+      "现货",
+      "拍下即发",
+      "当天发",
+      "顺丰包邮",
+      "官方仓",
+      "保税仓"
+    ],
+    "standard": "宣传物流发货时效、承运商、包邮、发货地、现货/预售等与商品详情页不一致",
+    "risk_reason": "物流时效与详情页不符，造成虚假宣传；物流虚假/服务未履约风险",
+    "rectification": "删除不符物流承诺，按商品详情页改写；“预计X日内发货，具体以订单页面为准”；按商品详情页发货时效表达",
+    "examples": [
+      "预售商品宣传“现货马上发”；非包邮宣传包邮",
+      "发货时效、承运商和包邮信息应与商品详情页一致",
+      "预售商品宣传现货/拍下即发"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、直播背景板、商品详情页",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品物流字段比对",
+    "manual_review": "后台物流配置需人工/接口确认",
+    "source_url": "https://www.chuangzuomiao.com/287.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-010",
+    "rule_name": "售后承诺与实际服务不一致",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：售后服务不符",
+    "risk_level": "高",
+    "keywords": [
+      "无条件退",
+      "终身保修",
+      "免费安装",
+      "全国联保",
+      "坏了包赔"
+    ],
+    "standard": "宣传退换、保修、售后、上门安装、无忧退等服务与商品实际服务不一致",
+    "risk_reason": "售后服务与商品服务标不一致；虚假宣传/售后违规风险",
+    "rectification": "删除不实售后承诺，按服务标签重写；“售后政策以商品详情页及平台规则为准”；以商品页服务标为准，不实承诺删除",
+    "examples": [
+      "商品不支持安装却口播免费上门安装",
+      "以商详服务标和售后政策为准",
+      "未开通运费险却承诺退货包运费"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、贴片、商品服务标",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品服务字段比对",
+    "manual_review": "需客服/运营确认服务政策",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-011",
+    "rule_name": "承诺赠品/服务/权益未兑现",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：承诺未履约",
+    "risk_level": "高",
+    "keywords": [
+      "送赠品",
+      "返差价",
+      "保价",
+      "包安装",
+      "包售后",
+      "赠运费险",
+      "返现",
+      "前100名送",
+      "赠品",
+      "补贴"
+    ],
+    "standard": "承诺赠品、优惠、服务、补贴、返现等无法兑现或没有规则依据",
+    "risk_reason": "虚假宣传/服务未履约风险",
+    "rectification": "删除无法履约承诺或补充活动规则；“赠品数量有限，详见直播间活动规则”",
+    "examples": [
+      "直播口播前100名送礼品但无库存/无规则",
+      "活动权益需提前配置并明确条件、数量、时间"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、活动贴片、直播间承诺",
+    "ai_detectability": "部分",
+    "ai_detection_method": "ASR+OCR+活动规则表比对",
+    "manual_review": "承诺兑现需运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102131",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-012",
+    "rule_name": "使用绝对化/权威化广告禁词",
+    "category": "A 宣传真实性",
+    "sub_category": "虚假宣传：广告禁用词",
+    "risk_level": "高",
+    "keywords": [
+      "国家级",
+      "最高级",
+      "最佳",
+      "第一",
+      "唯一",
+      "顶级",
+      "绝对",
+      "永久",
+      "无敌",
+      "史上最低",
+      "最低价",
+      "史上"
+    ],
+    "standard": "使用绝对化、极限化、虚假承诺、权威背书或无法考证词语进行宣传",
+    "risk_reason": "广告禁用词/虚假宣传风险",
+    "rectification": "删除禁用词，改为中性表达；“行业领先”改为“较受用户关注”；“最低价”改为“活动价参考”；删除绝对化、唯一性、无法证明表述；“限时活动价，具体以直播间实际价格为准”",
+    "examples": [
+      "封面写“全网第一”“史上最低价”",
+      "用客观、可证明、有限定条件的表述"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "标题、口播、字幕、贴片、封面",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+广告禁词库+大模型",
+    "manual_review": "语境判定需复核",
+    "source_url": "https://www.chuangzuomiao.com/985.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-013",
+    "rule_name": "夸大用户预期/不合理承诺",
+    "category": "A 宣传真实性",
+    "sub_category": "过度提高预期",
+    "risk_level": "中",
+    "keywords": [
+      "买了就后悔没早买",
+      "闭眼入",
+      "永不坏",
+      "包你满意",
+      "效果立现"
+    ],
+    "standard": "通过夸大描述或不合理承诺，让消费者对商品效果、价格、服务产生过高预期",
+    "risk_reason": "虚假宣传/过度提高预期风险",
+    "rectification": "降低承诺强度，补充适用条件；“适合日常搭配，实际效果因人而异”",
+    "examples": [
+      "用夸张前后对比暗示穿上裤子立刻瘦十斤",
+      "表达真实使用体验，避免保证结果"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、对比演示、标题",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+语义判断+人工复核",
+    "manual_review": "主观夸大需人工复核",
+    "source_url": "https://www.chuangzuomiao.com/985.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-A2-014",
+    "rule_name": "瑕疵/二手/临期等未充分说明",
+    "category": "A 宣传真实性",
+    "sub_category": "瑕疵描述不符",
+    "risk_level": "高",
+    "keywords": [
+      "微瑕",
+      "临期",
+      "二手",
+      "翻新",
+      "样机",
+      "清仓尾货"
+    ],
+    "standard": "商品有瑕疵、临期、二手、翻新、样机等情况但视频未说明或说明不准确",
+    "risk_reason": "虚假宣传/售后纠纷风险",
+    "rectification": "补充瑕疵说明或下架重剪；“该商品为微瑕款，瑕疵位置见图，以详情页为准”",
+    "examples": [
+      "瑕疵品按全新品宣传；临期商品未说明有效期",
+      "清晰展示瑕疵位置、程度、有效期和售后边界"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品展示、商品详情",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品标签/质检资料比对",
+    "manual_review": "瑕疵真实性需人工复核",
+    "source_url": "https://www.chuangzuomiao.com/985.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-001",
+    "rule_name": "以不当利益或话术诱导互动",
+    "category": "B 违规营销",
+    "sub_category": "违规营销：诱导互动",
+    "risk_level": "高",
+    "keywords": [
+      "评论已拍",
+      "扣1",
+      "点赞送",
+      "关注抽奖",
+      "不给运费险",
+      "不打已拍不给福利"
+    ],
+    "standard": "以违规方式诱导用户点赞、评论、关注、下单或进行与交易无关的异常互动",
+    "risk_reason": "将平台服务权益与互动行为强绑定，诱导互动；违规营销风险",
+    "rectification": "删除强诱导话术，改为正常咨询/下单引导；“有需要可点击商品卡了解详情”；删除该话术，按商品页面服务标说明",
+    "examples": [
+      "直播说“不打已拍，不给七天无理由运费险”",
+      "互动可引导但不得与权益/服务强绑定或误导",
+      "主播说“不打已拍，不给七天无理由运费险”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、评论区、直播间互动",
+    "ai_detectability": "高",
+    "ai_detection_method": "ASR+OCR+互动风险词库",
+    "manual_review": "复杂玩法需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/113831",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-002",
+    "rule_name": "刻意憋单/不及时讲清商品信息",
+    "category": "B 违规营销",
+    "sub_category": "制造紧张营销：憋单",
+    "risk_level": "中",
+    "keywords": [
+      "憋单",
+      "马上没了",
+      "不给链接",
+      "最后一波",
+      "倒计时压迫"
+    ],
+    "standard": "制造紧张氛围，长时间不讲清商品价格、规格、权益，诱导集中下单",
+    "risk_reason": "制造紧张氛围，用户信息不足；违规营销/低质量直播风险",
+    "rectification": "补充商品信息和活动规则，停止压迫式话术；“库存和优惠以商品页面展示为准”；及时说明商品核心信息和规则",
+    "examples": [
+      "直播长时间不说明价格和规则，仅反复催拍",
+      "清楚说明商品、价格、库存、权益和活动条件",
+      "长时间催拍但不讲清价格、规格、活动规则"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "直播口播、直播节奏、上架行为",
+    "ai_detectability": "部分",
+    "ai_detection_method": "ASR+直播行为数据+人工复核",
+    "manual_review": "需结合直播时序人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-003",
+    "rule_name": "快速切品/过款造成误导",
+    "category": "B 违规营销",
+    "sub_category": "快速过款",
+    "risk_level": "中",
+    "keywords": [
+      "快速上架下架",
+      "秒过",
+      "只报低价不讲规格"
+    ],
+    "standard": "商品讲解时间过短、信息不充分，快速过款诱导用户在不了解情况下购买",
+    "risk_reason": "违规营销/低质量直播风险",
+    "rectification": "延长讲解，补充规格/价格/售后信息；每款商品至少说明核心规格、价格条件和售后",
+    "examples": [
+      "主播10秒切一个商品，只说低价不讲规格",
+      "每款商品应有足够信息说明和真实展示"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "直播讲解、商品上架、价格口播",
+    "ai_detectability": "部分",
+    "ai_detection_method": "直播行为时序+ASR+人工复核",
+    "manual_review": "需人工复核直播过程",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-004",
+    "rule_name": "活动规则不清或玩法违规",
+    "category": "B 违规营销",
+    "sub_category": "违规活动或玩法",
+    "risk_level": "中",
+    "keywords": [
+      "前X名",
+      "抽奖",
+      "送礼",
+      "盲盒",
+      "不确定性",
+      "私下开奖",
+      "无规则",
+      "前100名送",
+      "赠品"
+    ],
+    "standard": "设置抽奖、赠品、优惠、限时权益等活动但未明确规则、期限、条件，或玩法违反平台规则",
+    "risk_reason": "违规营销活动/玩法风险",
+    "rectification": "补充完整活动规则或取消活动表达；“活动时间X-X，数量有限，规则详见直播间公告”；补充活动时间、数量、条件、发放方式；“活动时间X-X，数量有限，赠完即止，规则见直播间公告”",
+    "examples": [
+      "视频写前100名送赠品但没有活动规则和截止时间",
+      "活动需明确时间、资格、数量、发放方式和限制条件"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、活动贴片、直播公告",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+活动规则表比对",
+    "manual_review": "活动规则需运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/aJksF3Y7x1Bc",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-005",
+    "rule_name": "以盲盒/抽奖等不确定性方式售卖",
+    "category": "B 违规营销",
+    "sub_category": "不确定性方式推广商品/盲盒营销风险",
+    "risk_level": "高",
+    "keywords": [
+      "盲盒",
+      "随机",
+      "赌运气",
+      "抽中",
+      "拆卡",
+      "评级卡",
+      "明盒当盲盒",
+      "随机发"
+    ],
+    "standard": "假借盲盒、抽奖、随机发货等方式推广商品，价格/价值/结果具有不确定性，易构成违规营销",
+    "risk_reason": "以不确定性方式推广商品，存在违规营销风险；违规营销/消费者权益风险",
+    "rectification": "取消不确定性玩法，明示商品内容和价格；改为固定SKU、固定价格、固定发货内容",
+    "examples": [
+      "直播售卖自制分装盲盒；诱导购买评级卡盲盒",
+      "商品信息、价格和发货内容应明确确定",
+      "售卖自制分装盲盒或用盲盒形式卖固定商品"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品展示、直播玩法",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+玩法关键词+人工复核",
+    "manual_review": "盲盒玩法必须人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/aJksF3Y7x1Bc",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-BM-006",
+    "rule_name": "以公益名义进行不实营销",
+    "category": "B 违规营销",
+    "sub_category": "虚假公益捐赠",
+    "risk_level": "高",
+    "keywords": [
+      "公益捐赠",
+      "每卖一单捐X元",
+      "助农",
+      "慈善",
+      "爱心款"
+    ],
+    "standard": "宣传捐赠、公益、助农、公益联名等但无真实依据或未说明规则",
+    "risk_reason": "虚假公益宣传风险",
+    "rectification": "删除无证明公益表达，补充公示和凭证；“公益活动详情见官方公告/平台活动页”",
+    "examples": [
+      "口播每卖一单捐1元但无捐赠证明和规则",
+      "公益活动需有真实资质、规则和公示"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、活动贴片、商品文案",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+公益词库+人工资质复核",
+    "manual_review": "必须人工核验材料",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TP-001",
+    "rule_name": "引导用户离开平台交易",
+    "category": "B 诱导第三方",
+    "sub_category": "诱导站外交易/私下交易",
+    "risk_level": "高",
+    "keywords": [
+      "加微信",
+      "私聊我",
+      "主页联系方式",
+      "看置顶",
+      "扫二维码",
+      "VX",
+      "企鹅号",
+      "站外链接",
+      "QQ",
+      "二维码",
+      "私信",
+      "站外"
+    ],
+    "standard": "引导用户通过微信、QQ、手机号、二维码、外链、其他平台完成咨询、交易、支付、售后",
+    "risk_reason": "引导离开平台交易，存在诱导第三方风险；诱导第三方严重风险",
+    "rectification": "删除联系方式和站外导流话术，改为平台内咨询；“可在商品卡或店铺客服咨询”；删除联系方式和站外入口，改为平台内咨询；“点击商品卡/店铺客服了解详情”；改为平台内客服/商品卡咨询",
+    "examples": [
+      "直播说“私信加我微信更便宜”",
+      "所有交易咨询和售后在平台内完成",
+      "口播“私信加我微信更便宜”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、评论区、私信引导、二维码、联系方式",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+联系方式/二维码检测+Logo识别",
+    "manual_review": "命中站外导流需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102127",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TP-002",
+    "rule_name": "使用暗语规避平台识别",
+    "category": "B 诱导第三方",
+    "sub_category": "模糊私信/暗语导流",
+    "risk_level": "高",
+    "keywords": [
+      "V我",
+      "薇",
+      "企鹅",
+      "扣",
+      "私",
+      "暗号",
+      "主页见",
+      "你懂的",
+      "二维码遮挡",
+      "二维码",
+      "私信",
+      "站外"
+    ],
+    "standard": "使用缩写、谐音、图形、暗号等方式暗示站外联系方式或私下交易",
+    "risk_reason": "诱导第三方风险",
+    "rectification": "删除暗语，改为平台内合规话术；“点击商品卡查看优惠”",
+    "examples": [
+      "只说“私信两个字”暗示站外交易",
+      "明确引导平台内客服/商品卡，不使用暗语"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、评论区、贴片",
+    "ai_detectability": "中",
+    "ai_detection_method": "ASR+OCR+暗语词库+人工复核",
+    "manual_review": "暗语需人工判断上下文",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102127",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TP-003",
+    "rule_name": "展示站外交易入口",
+    "category": "B 诱导第三方",
+    "sub_category": "站外平台标志/页面导流",
+    "risk_level": "高",
+    "keywords": [
+      "淘宝",
+      "京东",
+      "拼多多",
+      "微信",
+      "QQ",
+      "二维码",
+      "手机号",
+      "网址",
+      "微信收款码",
+      "站外"
+    ],
+    "standard": "视频或直播画面展示站外平台交易页面、二维码、联系方式，造成导流风险",
+    "risk_reason": "展示站外交易入口，可能导流私域；诱导第三方风险",
+    "rectification": "打码/替换画面，取消站外入口；只展示抖音电商平台内页面；删除联系方式和站外入口，改为平台内咨询；“点击商品卡/店铺客服了解详情”；打码或删除二维码/站外页面",
+    "examples": [
+      "手机画面展示微信收款码或京东商品页",
+      "使用抖音店铺/商品卡/平台客服入口",
+      "画面展示二维码/站外平台页面"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "手机屏幕、背景、贴片、二维码、Logo",
+    "ai_detectability": "高",
+    "ai_detection_method": "Logo识别+二维码检测+OCR",
+    "manual_review": "特殊新闻/对比场景需复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/102127",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-001",
+    "rule_name": "价格说明不清导致误解",
+    "category": "E 价格活动",
+    "sub_category": "违规宣传价格：价格不规范描述",
+    "risk_level": "高",
+    "keywords": [
+      "到手价",
+      "只要",
+      "低至",
+      "起",
+      "拍多件",
+      "运费另付",
+      "券后价不说明条件"
+    ],
+    "standard": "宣传价格时未清晰说明对应商品规格、款式、数量、运费、优惠门槛等，导致消费者误解",
+    "risk_reason": "“全年至低价”属于绝对化价格表达，且错字影响专业度；价格条件不清导致误解；违规宣传价格风险",
+    "rectification": "补充价格条件、规格和费用说明；“X款券后到手价约701元，实际以直播间页面为准”；补充SKU和优惠条件，避免低价误导；“X规格券后约X元，不含安装费，以页面为准”；改为“618限时活动价，到手价以直播间为准”；补充SKU、券、运费和活动条件",
+    "examples": [
+      "视频写701元但未说明对应配置/SKU或券后条件",
+      "价格必须对应明确SKU和条件，额外费用需说明",
+      "封面写“全年至低价”，价格贴片突出“¥701”",
+      "宣传“低至99”但未说明仅某一SKU/需券/不含运费"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、口播、贴片、商品价格、SKU",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+价格识别+SKU/活动表比对",
+    "manual_review": "复杂优惠需运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113290",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-002",
+    "rule_name": "视频价/口播价与实际价格不一致",
+    "category": "E 价格活动",
+    "sub_category": "价格宣传与实际不一致",
+    "risk_level": "高",
+    "keywords": [
+      "视频价701",
+      "直播间不是701",
+      "口播到手价与页面不一致",
+      "到手价"
+    ],
+    "standard": "视频宣发价格、直播口播价格与商品卡、直播间、活动页实际价格不一致",
+    "risk_reason": "宣发价格与实际价格不一致；价格违规/公司扣分",
+    "rectification": "修改价格或下架视频，统一价格口径；“以直播间实时价格为准”；统一视频、商品卡、直播间和活动表价格口径；“券后到手价约X元，实际以直播间页面为准”；统一价格或注明以直播间实时价为准",
+    "examples": [
+      "短视频引流直播间宣传699，到直播间实际799",
+      "视频价、商品卡价、直播间价、活动规则四者一致",
+      "短视频宣传699，到直播间实际799"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕价格、口播价格、商品卡价格、直播间实时价",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品价格接口/活动表比对",
+    "manual_review": "价格口径需运营确认",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113290",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-003",
+    "rule_name": "划线价/原价/专柜价虚构",
+    "category": "E 价格活动",
+    "sub_category": "虚构被比较价",
+    "risk_level": "高",
+    "keywords": [
+      "原价999",
+      "专柜价",
+      "市场价",
+      "比平时便宜",
+      "折前价",
+      "吊牌价",
+      "原价"
+    ],
+    "standard": "使用无依据或虚构的原价、专柜价、市场价、划线价进行优惠对比",
+    "risk_reason": "虚构原价/划线价，构成价格误导；价格违规风险",
+    "rectification": "删除无依据被比较价，改为当前活动价说明；“当前活动价X元，优惠以页面为准”；删除无依据原价，仅说明当前活动价",
+    "examples": [
+      "无证明写“原价1999现价299”",
+      "被比较价格需真实、可证明且明确来源",
+      "无证明宣传“原价1999，今天299”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、贴片、口播、价格对比图",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+价格词库+证据复核",
+    "manual_review": "需人工核验价格依据",
+    "source_url": "https://school.jinritemai.com/doudian/wap/article/aJ2ymdS5jWGZ?from_school=1&should_full_screen=1&should_hide_bottom_nav=1",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-004",
+    "rule_name": "用低价SKU吸引点击或规避质检",
+    "category": "E 价格活动",
+    "sub_category": "低价引流/低价SKU作弊",
+    "risk_level": "高",
+    "keywords": [
+      "低价SKU",
+      "拍多单",
+      "低价链接",
+      "规避平台管控"
+    ],
+    "standard": "以低价SKU或低价链接吸引点击、下单，实际主推商品需更高价格或拍多单",
+    "risk_reason": "价格作弊，以低价链接吸引点击/下单；价格作弊风险",
+    "rectification": "停止低价SKU引流，按真实主推商品建链；明示完整商品价格和购买方式；停止低价链接拍多单，按真实商品建链",
+    "examples": [
+      "引导消费者去低价链接拍多单来凑成主商品",
+      "主推商品价格应真实完整，不使用低价链接作弊",
+      "引导用户至低价链接拍多单，规避平台质检"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "商品卡价格、口播价格、视频贴片、SKU列表",
+    "ai_detectability": "部分",
+    "ai_detection_method": "价格识别+商品SKU分析+人工复核",
+    "manual_review": "需运营/商品后台核查",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113290",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-005",
+    "rule_name": "折扣/优惠力度虚构",
+    "category": "E 价格活动",
+    "sub_category": "虚构优惠折扣",
+    "risk_level": "高",
+    "keywords": [
+      "立省",
+      "补贴",
+      "折上折",
+      "秒杀",
+      "清仓",
+      "亏本",
+      "限时半价"
+    ],
+    "standard": "宣传优惠、折扣、补贴、立减等但无真实依据或不符合活动规则",
+    "risk_reason": "价格违规/虚假宣传风险",
+    "rectification": "删除虚构优惠，按真实活动重写；“可领券，优惠以页面展示为准”",
+    "examples": [
+      "口播“立省500”但实际没有优惠券/补贴",
+      "优惠金额需来自真实活动或券，且明确使用条件"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、口播、贴片、活动页",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+活动表比对",
+    "manual_review": "需运营确认活动配置",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113290",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-006",
+    "rule_name": "未说明运费/安装费/配件费",
+    "category": "E 价格活动",
+    "sub_category": "运费/额外费用未说明",
+    "risk_level": "中",
+    "keywords": [
+      "包邮不实",
+      "另付运费",
+      "安装费未说明",
+      "配件另购",
+      "到手价"
+    ],
+    "standard": "宣传商品价格时未清晰说明运费、安装费、配件费等额外费用，造成误解",
+    "risk_reason": "价格条件不清导致误解；价格不规范描述风险",
+    "rectification": "补充费用说明或调整价格口径；“不含安装费，具体费用以页面为准”；补充SKU和优惠条件，避免低价误导；“X规格券后约X元，不含安装费，以页面为准”；补充SKU、券、运费和活动条件",
+    "examples": [
+      "视频说到手价99，实际需另付安装费/运费",
+      "明确价格是否含运费/安装/配件",
+      "宣传“低至99”但未说明仅某一SKU/需券/不含运费"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品服务、价格贴片",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+费用词库+服务字段比对",
+    "manual_review": "费用规则需运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113290",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-007",
+    "rule_name": "时效活动结束后未处理视频",
+    "category": "E 价格活动",
+    "sub_category": "活动过期未下架",
+    "risk_level": "中",
+    "keywords": [
+      "618",
+      "双11",
+      "今日",
+      "限时",
+      "前X名",
+      "截止今晚"
+    ],
+    "standard": "活动结束后，视频仍在传播且未下架/未更新，导致消费者误解",
+    "risk_reason": "消费者按旧活动预期进直播间，造成投诉风险；公司扣分；活动误导风险",
+    "rectification": "活动结束后下架/隐藏/重剪视频；标注“活动已结束”或删除时效价格；下架、隐藏或重剪视频；“该活动已结束，请以直播间最新活动为准”；活动结束后下架或重剪",
+    "examples": [
+      "618活动价视频在活动结束后仍挂售",
+      "活动内容标注起止时间并到期下架/隐藏",
+      "活动已结束，视频仍展示旧活动价格/赠品"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "视频标题、字幕、贴片、发布时间、活动日期",
+    "ai_detectability": "部分",
+    "ai_detection_method": "日期识别+活动表比对+定时巡检",
+    "manual_review": "活动变更需运营确认",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-008",
+    "rule_name": "限时/限量/前N名规则不清",
+    "category": "E 价格活动",
+    "sub_category": "时效活动规则未标注",
+    "risk_level": "中",
+    "keywords": [
+      "前X名",
+      "限量",
+      "送XXX",
+      "仅今日",
+      "最后一波"
+    ],
+    "standard": "选用时效限制类政策或活动，未明确写清活动规则、期限、数量和领取方式",
+    "risk_reason": "公司扣分；违规营销风险",
+    "rectification": "补充完整活动规则；“活动时间X-X，前50名以下单时间为准，赠完即止”；补充活动时间、数量、条件、发放方式；“活动时间X-X，数量有限，赠完即止，规则见直播间公告”",
+    "examples": [
+      "“前50名送锅”但不写时间和领取方式",
+      "明确时间、数量、条件、发放方式和最终解释口径"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、贴片、口播、直播公告",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+活动规则完整性检查",
+    "manual_review": "活动细节需运营复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-P1-009",
+    "rule_name": "无服务却承诺服务",
+    "category": "E 价格活动",
+    "sub_category": "七天无理由/运费险虚假承诺",
+    "risk_level": "高",
+    "keywords": [
+      "七天无理由",
+      "运费险",
+      "退货包运费",
+      "无忧退"
+    ],
+    "standard": "承诺七天无理由、运费险、极速退等服务，但商品或商家实际未开通/不支持",
+    "risk_reason": "将平台服务权益与互动行为强绑定，诱导互动；售后服务与商品服务标不一致；违规营销/售后虚假风险",
+    "rectification": "删除不实服务承诺，按服务标说明；“是否支持七天无理由/运费险以商品页面为准”；删除该话术，按商品页面服务标说明；以商品页服务标为准，不实承诺删除",
+    "examples": [
+      "直播说“不给已拍不给七天无理由运费险”；商品未开通却承诺",
+      "服务承诺以商品服务标为准，不得附加不合理条件",
+      "主播说“不打已拍，不给七天无理由运费险”",
+      "未开通运费险却承诺退货包运费"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、商品服务标、直播话术",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR+ASR+商品服务字段比对",
+    "manual_review": "需后台服务标复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/113831",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-001",
+    "rule_name": "盗用/搬运他人直播内容",
+    "category": "D 内容质量/作弊",
+    "sub_category": "内容作弊：盗播",
+    "risk_level": "高",
+    "keywords": [
+      "盗播",
+      "搬运直播录像",
+      "录屏他人直播",
+      "无人值守播他人素材"
+    ],
+    "standard": "盗用或搬运他人直播内容，在自己的直播过程中播放录像或他人内容",
+    "risk_reason": "盗用/搬运他人直播内容，内容作弊和侵权；抖音内容作弊/侵权处置",
+    "rectification": "立即中断/下架盗播内容，使用自有直播素材；改为真人实拍/授权素材；停止盗播，使用自有/授权直播内容",
+    "examples": [
+      "直播间播放他人直播录像带货",
+      "使用自有真人直播或授权内容"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "直播画面、音频、背景、主播身份",
+    "ai_detectability": "部分",
+    "ai_detection_method": "视频指纹/人脸比对/直播时序检测+人工复核",
+    "manual_review": "盗播需人工确认来源",
+    "source_url": "https://school.jinritemai.com/doudian/wap/article/aHh1kYw7TtaG?from=href&from_school=1&should_full_screen=1&should_hide_bottom_nav=1",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-002",
+    "rule_name": "录播或挂机替代真实直播",
+    "category": "D 内容质量/作弊",
+    "sub_category": "内容作弊：录播/挂机直播",
+    "risk_level": "中",
+    "keywords": [
+      "录播",
+      "挂机",
+      "循环播放",
+      "绿幕抠图",
+      "画面颠倒",
+      "无人讲解"
+    ],
+    "standard": "直播间长时间播放录制视频、无人互动、挂机、循环素材，或无法正常讲解商品",
+    "risk_reason": "低质量直播/内容作弊风险；内容作弊/低质量直播风险",
+    "rectification": "停止录播/挂机，安排真人讲解；保证主播实时出镜/讲解/互动；停止低质直播，改为真人有效讲解；每款商品讲清规格、价格条件、售后、使用场景；安排真人讲解并实时回应用户",
+    "examples": [
+      "直播间循环播放短视频，主播不在场不回应",
+      "真人实时讲解并能响应用户问题",
+      "直播间循环播放视频，无人实时互动"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "直播画面、主播行为、互动响应、音频",
+    "ai_detectability": "部分",
+    "ai_detection_method": "直播行为检测+ASR互动检测+人工复核",
+    "manual_review": "需结合直播数据复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-003",
+    "rule_name": "直播内容质量不足",
+    "category": "D 内容质量/作弊",
+    "sub_category": "低质量直播带货",
+    "risk_level": "中",
+    "keywords": [
+      "不讲品",
+      "不互动",
+      "长时间空镜",
+      "重复无意义话术",
+      "画面颠倒",
+      "低质抠图"
+    ],
+    "standard": "长时间无有效商品讲解、无互动、内容与商品无关、画面低质、影响消费者购物体验",
+    "risk_reason": "低质量直播/内容作弊风险；低质量直播带货处置风险",
+    "rectification": "补充商品讲解和互动，改善画面质量；每款商品说明核心卖点、规格、价格条件和售后；停止低质直播，改为真人有效讲解；每款商品讲清规格、价格条件、售后、使用场景；安排真人讲解并实时回应用户",
+    "examples": [
+      "直播间长时间放背景图，主播不讲商品",
+      "围绕商品卖点、价格、售后、使用场景进行有效讲解",
+      "直播间循环播放视频，无人实时互动"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "直播画面、讲解内容、互动、商品展示",
+    "ai_detectability": "部分",
+    "ai_detection_method": "直播ASR+场景识别+互动数据+人工复核",
+    "manual_review": "需人工抽查直播片段",
+    "source_url": "https://school.jinritemai.com/doudian/wap/article/aJU8PWMwVrkD?from=zhibo&from_school=1&should_full_screen=1&should_hide_bottom_nav=1",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-004",
+    "rule_name": "危险/血腥/负能量/怪异画面",
+    "category": "D 内容质量/作弊",
+    "sub_category": "视频风格不符合品牌形象",
+    "risk_level": "高",
+    "keywords": [
+      "危险画面",
+      "血腥暴力",
+      "低俗热点",
+      "负能量",
+      "怪异视觉"
+    ],
+    "standard": "画面危险、血腥暴力、过度娱乐化、负能量、热点不当或视觉怪异，不符合品牌形象",
+    "risk_reason": "公司扣分；低俗/暴力/不良内容风险",
+    "rectification": "删除敏感/负面元素，调整为正向场景；以真实使用场景和产品价值表达替代热点蹭流",
+    "examples": [
+      "为了流量恶搞安全事故热点推广商品",
+      "选用正向、真实、符合品牌调性的场景"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面、脚本、热点选题、人物动作",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态识图+敏感内容模型+人工复核",
+    "manual_review": "品牌调性需人工判断",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-005",
+    "rule_name": "通过危险或极端测试营销",
+    "category": "D 内容质量/作弊",
+    "sub_category": "暴力测试/危险动作",
+    "risk_level": "高",
+    "keywords": [
+      "砸",
+      "烧",
+      "踩钉子",
+      "刀割",
+      "电击",
+      "高空抛落",
+      "危险驾驶"
+    ],
+    "standard": "使用暴力测试、危险动作、极端场景证明商品效果，可能误导或引发安全风险",
+    "risk_reason": "暴力测试场景夸张且可能误导质量；公司扣分；安全风险/效果虚假风险",
+    "rectification": "删除危险测试，替换为安全演示；改为实验室/官方数据/正常场景演示；替换为安全合规测试或官方数据",
+    "examples": [
+      "用踩钉子测试鞋底防刺穿；用火烧测试产品",
+      "使用安全、真实、可复现的常规测试",
+      "通过暴力踩钉子证明鞋子质量"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "演示画面、道具、动作、字幕",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态识别+动作/道具风险库",
+    "manual_review": "需人工确认危险程度",
+    "source_url": "https://www.xiaoduoai.com/blog/5058.html",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-006",
+    "rule_name": "画面或语言涉及低俗色情暴力",
+    "category": "D 内容质量/作弊",
+    "sub_category": "低俗/色情/暴力内容",
+    "risk_level": "高",
+    "keywords": [
+      "低俗着装",
+      "成人用品暗示",
+      "暴力",
+      "血腥",
+      "赌博",
+      "恐怖",
+      "涉黄"
+    ],
+    "standard": "出现色情、低俗、暴力、血腥、赌博、极端场景或教唆犯罪等不适宜内容",
+    "risk_reason": "平台内容安全处置风险",
+    "rectification": "删除敏感内容，重剪或重拍；改为产品使用场景/真实体验；删除敏感内容，改为正向产品场景；用真实用户痛点和商品价值表达",
+    "examples": [
+      "用擦边舞蹈卖货；血腥画面做钩子",
+      "保持正常服化道和产品相关内容"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面、服装、动作、台词、字幕",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态安全模型+ASR+人工复核",
+    "manual_review": "敏感内容必须人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/102115",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-007",
+    "rule_name": "恶搞产品/人物影响品牌形象",
+    "category": "D 内容质量/作弊",
+    "sub_category": "恶搞/网络化产品或人物",
+    "risk_level": "中",
+    "keywords": [
+      "恶搞高管",
+      "恶搞产品",
+      "鬼畜",
+      "过度玩梗"
+    ],
+    "standard": "恶搞、网络化任何产品及人物，歪曲产品价值或人物形象",
+    "risk_reason": "公司扣分；品牌风险",
+    "rectification": "删除恶搞人物/产品桥段；采用真实用户痛点和场景化表达",
+    "examples": [
+      "用恶搞小米高管的内容推广产品",
+      "使用尊重、正向、轻度幽默表达"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "脚本、画面、人物设定、口播",
+    "ai_detectability": "中",
+    "ai_detection_method": "文本/多模态识别+人工复核",
+    "manual_review": "需人工判断边界",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-CT-008",
+    "rule_name": "涉及政治宗教民族主义等",
+    "category": "D 内容质量/作弊",
+    "sub_category": "敏感议题内容",
+    "risk_level": "高",
+    "keywords": [
+      "政治",
+      "宗教",
+      "民族",
+      "性别对立",
+      "社会事件",
+      "极端观点"
+    ],
+    "standard": "涉及政治、宗教、民族主义、性别对立等敏感内容，或利用敏感议题引流",
+    "risk_reason": "平台内容安全和品牌风险高；公司扣分；平台内容安全风险",
+    "rectification": "删除敏感内容，重写脚本；围绕产品功能、价格、服务表达；删除敏感内容，改为正向产品场景；用真实用户痛点和商品价值表达；删除敏感议题，重写产品相关脚本",
+    "examples": [
+      "用社会敏感事件做电商卖点钩子",
+      "不使用敏感议题引流，聚焦产品信息",
+      "使用政治、宗教、民族主义、性别对立话题引流"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "字幕、口播、画面、评论引导",
+    "ai_detectability": "中",
+    "ai_detection_method": "文本敏感词+多模态+人工复核",
+    "manual_review": "必须人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-VG-001",
+    "rule_name": "推广禁售品或违禁信息",
+    "category": "G 禁售/违禁信息",
+    "sub_category": "发布平台禁止商品/信息",
+    "risk_level": "高",
+    "keywords": [
+      "违禁品",
+      "未招商品类",
+      "色情暴力低俗类",
+      "危险品",
+      "违法服务"
+    ],
+    "standard": "发布或推广平台禁止销售的商品、信息、服务或风险品类",
+    "risk_reason": "平台禁售商品/信息处置风险",
+    "rectification": "立即下架相关内容和商品；选择平台允许且资质齐全的商品；下架并补齐资质或更换商品；只推广已准入且资质齐全商品",
+    "examples": [
+      "直播间推广未获许可的高风险商品",
+      "先核对类目准入和平台招商规则"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "商品卡、口播、字幕、画面商品",
+    "ai_detectability": "部分",
+    "ai_detection_method": "商品类目识别+禁售词库+人工复核",
+    "manual_review": "禁售类需人工/运营确认",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aJTm8SREBC39",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-VG-002",
+    "rule_name": "无资质推广特定服务或商品",
+    "category": "G 禁售/违禁信息",
+    "sub_category": "平台暂未开启招商/资质不足",
+    "risk_level": "高",
+    "keywords": [
+      "无许可证",
+      "暂未招商",
+      "无资质",
+      "代办",
+      "灰产服务"
+    ],
+    "standard": "推广需要资质或平台暂未招商的商品/服务，如无许可证研学等",
+    "risk_reason": "禁售/准入违规风险",
+    "rectification": "下架无资质内容并补齐资质；只推广已准入类目和已审核商品；下架并补齐资质或更换商品；只推广已准入且资质齐全商品",
+    "examples": [
+      "无旅行社许可证推广研学旅行",
+      "推广前核验资质和平台准入"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "商品卡、口播、字幕、资质材料",
+    "ai_detectability": "部分",
+    "ai_detection_method": "类目准入表+资质库比对",
+    "manual_review": "资质必须人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aJTm8SREBC39",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TR-001",
+    "rule_name": "通过异常交易制造销量/评价/佣金",
+    "category": "F 交易服务",
+    "sub_category": "虚假交易",
+    "risk_level": "高",
+    "keywords": [
+      "刷单",
+      "搬单",
+      "代拍",
+      "空交易",
+      "虚构订单",
+      "诱导用户刷单"
+    ],
+    "standard": "通过搬单、刷单、诱导虚假交易、配合他人虚假交易等方式获得销量、评价、佣金或规避规则",
+    "risk_reason": "破坏交易秩序，虚构真实交易；平台可取消销量/评价、限制活动、违约金等",
+    "rectification": "停止虚假交易行为，保留真实交易证据；不使用刷单/搬单/虚假评价话术；删除诱导评价/虚假交易话术；“欢迎真实评价和反馈”；停止虚假交易，保留真实交易证据",
+    "examples": [
+      "创作者搬单获取佣金；引导用户下单后退款形成虚假销量",
+      "真实交易、真实评价，不组织异常订单",
+      "通过搬单、刷单制造销量/评价"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "订单数据、口播、评论区、运营行为",
+    "ai_detectability": "低",
+    "ai_detection_method": "订单风控数据+人工稽核",
+    "manual_review": "需平台/运营数据，AI仅提示话术风险",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113668",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TR-002",
+    "rule_name": "诱导用户产生非真实评价或交易",
+    "category": "F 交易服务",
+    "sub_category": "诱导刷单/好评返现",
+    "risk_level": "高",
+    "keywords": [
+      "好评返现",
+      "晒图返现",
+      "五星返现",
+      "刷单返利",
+      "下单返红包",
+      "刷单",
+      "返现"
+    ],
+    "standard": "以返现、福利、补偿等方式诱导用户好评、刷单、虚假互动或异常交易",
+    "risk_reason": "诱导非真实评价，可能关联虚假交易；虚假交易/违规营销风险",
+    "rectification": "删除好评返现/刷单话术和物料；改为“欢迎真实评价和反馈”；删除诱导评价/虚假交易话术；“欢迎真实评价和反馈”；删除返现话术，鼓励真实评价",
+    "examples": [
+      "视频引导“好评返现10元”",
+      "不得以利益诱导评价；售后补偿需合规处理",
+      "字幕写“五星好评返现10元”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "口播、字幕、评论区、私信、售后卡片",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+风险词库",
+    "manual_review": "返现上下文需人工复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/articlev0/113668",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TR-003",
+    "rule_name": "未真实履行发货义务",
+    "category": "F 交易服务",
+    "sub_category": "欺诈发货：空包/拍A发B",
+    "risk_level": "高",
+    "keywords": [
+      "空包",
+      "拍A发B",
+      "发赠品冒充主品",
+      "假物流",
+      "无货发货",
+      "赠品"
+    ],
+    "standard": "通过发送空包裹、与宣传商品完全不符商品等方式，使用户未收到货或收到货与宣传完全不一致",
+    "risk_reason": "未真实履约，消费者未收到宣传商品；商家欺诈发货严重违规风险",
+    "rectification": "排查订单履约，停止欺诈发货，赔付/召回；发货前核对SKU、包裹重量、物流轨迹；核对SKU、物流、包裹重量并纠正履约；发货前核对订单商品与包裹内容一致；核查订单与包裹，纠正发货并赔付",
+    "examples": [
+      "消费者拍手机支架，收到空包或不同商品",
+      "真实履约，发货商品与订单和宣传一致",
+      "订单发空包或拍A发B"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "订单履约、物流信息、商品宣传、消费者反馈",
+    "ai_detectability": "低",
+    "ai_detection_method": "订单/物流/售后投诉数据+人工稽核",
+    "manual_review": "需要订单履约数据，AI只可提示宣传不符风险",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aHwH9wK4JyWJ",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-TR-004",
+    "rule_name": "延迟/缺货/虚假物流等",
+    "category": "F 交易服务",
+    "sub_category": "发货行为违规",
+    "risk_level": "中",
+    "keywords": [
+      "延迟发货",
+      "缺货",
+      "虚假物流",
+      "物流异常",
+      "厂家自送投诉"
+    ],
+    "standard": "未按承诺发货、缺货、虚假物流、厂家自送引发大量投诉等发货违规行为",
+    "risk_reason": "商家发货行为管理规则风险",
+    "rectification": "修正发货承诺，按平台规则补偿/处理；“预计X日内发货，以订单页为准”",
+    "examples": [
+      "宣传现货但超时未发货",
+      "发货承诺、库存和物流信息真实一致"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "物流单号、发货时间、商品承诺、订单状态",
+    "ai_detectability": "低",
+    "ai_detection_method": "订单发货数据+活动承诺比对",
+    "manual_review": "需运营/仓储数据复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/101706",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-SV-001",
+    "rule_name": "不响应合理咨询/售后",
+    "category": "F 交易服务",
+    "sub_category": "消极服务",
+    "risk_level": "中",
+    "keywords": [
+      "不回复",
+      "踢皮球",
+      "让用户自己找商家",
+      "辱骂消费者",
+      "拖延处理"
+    ],
+    "standard": "创作者在分享商品及售后期间，对消费者合理咨询/售后诉求不响应、敷衍、拒绝配合或态度消极",
+    "risk_reason": "售后期间对合理咨询消极处理；消极服务风险",
+    "rectification": "及时回复并明确处理路径；“请通过平台客服入口提交问题，我们会协助处理”；建立客服SOP并及时处理；“请通过平台客服入口提交，我们会协助处理”；按SOP及时回复并协助处理",
+    "examples": [
+      "用户咨询保修，主播/客服长期不回复",
+      "建立咨询和售后响应SOP，问题闭环处理",
+      "消费者咨询售后，长时间不回复或推诿"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "客服记录、评论区、私信、直播口播",
+    "ai_detectability": "低",
+    "ai_detection_method": "客服会话数据+情感分析+人工复核",
+    "manual_review": "需要客服/评论数据",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aHXbQgXfyqQ9",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-SV-002",
+    "rule_name": "拒绝退换/维修/补偿等合理请求",
+    "category": "F 交易服务",
+    "sub_category": "无故拒绝合理售后",
+    "risk_level": "中",
+    "keywords": [
+      "不退不换",
+      "自己承担",
+      "拆封不管",
+      "质量问题不管"
+    ],
+    "standard": "无正当理由拒绝消费者符合平台规则的退换、维修、补偿等售后诉求",
+    "risk_reason": "消极服务/售后纠纷风险",
+    "rectification": "按规则处理售后，统一客服话术；“符合平台规则的售后申请可按流程处理”；建立客服SOP并及时处理；“请通过平台客服入口提交，我们会协助处理”",
+    "examples": [
+      "商品支持七天无理由但客服拒绝退货",
+      "按平台售后规则和商品服务承诺处理"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "客服记录、直播口播、售后政策、商品服务标",
+    "ai_detectability": "低",
+    "ai_detection_method": "售后工单数据+政策比对+人工复核",
+    "manual_review": "需要售后数据复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aHXbQgXfyqQ9",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-QC-001",
+    "rule_name": "千川广告素材存在虚假夸大",
+    "category": "H 千川广告",
+    "sub_category": "广告投放违规：素材夸大/虚假",
+    "risk_level": "高",
+    "keywords": [
+      "广告禁词",
+      "低价引流",
+      "功效承诺",
+      "夸大对比",
+      "虚假优惠",
+      "全网最低",
+      "100%有效"
+    ],
+    "standard": "投放素材存在虚假宣传、夸大效果、价格误导、禁用词等违规内容",
+    "risk_reason": "千川素材同样受广告、虚假宣传和价格规则约束；巨量千川违规处理/准入管控风险",
+    "rectification": "停投或修改违规素材；同步短视频质检标准，先质检后投放；投放前按规则库质检，违规素材停投；广告素材、落地页、直播间三方口径一致；先质检再投放，删除禁词和夸大话术",
+    "examples": [
+      "千川素材写“全网最低”“100%有效”",
+      "广告素材与商品、直播间、落地页一致且合规",
+      "广告素材写“全网最低”“100%有效”"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "广告视频、标题、落地页、直播间商品",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+ASR+广告词库+规则库质检",
+    "manual_review": "投放前需运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/aHHocKuZvoSu",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-QC-002",
+    "rule_name": "投放承诺与承接页不一致",
+    "category": "H 千川广告",
+    "sub_category": "广告与商品/直播间不一致",
+    "risk_level": "高",
+    "keywords": [
+      "广告价与直播价不一致",
+      "赠品不一致",
+      "商品不一致",
+      "赠品"
+    ],
+    "standard": "广告中展示的价格、权益、商品、服务与落地页或直播间实际承接不一致",
+    "risk_reason": "广告、落地页、直播间口径不一致；巨量千川违规风险",
+    "rectification": "同步修正广告素材和承接页；“优惠以页面展示为准，广告素材不得单独承诺”；投放前按规则库质检，违规素材停投；广告素材、落地页、直播间三方口径一致；同步素材、商品页和直播间权益",
+    "examples": [
+      "广告写送运费险，商品页未开通运费险",
+      "广告素材、落地页、商品卡、直播间口径一致",
+      "广告写送赠品，直播间/商品页没有该权益"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "广告素材、商品卡、落地页、直播间",
+    "ai_detectability": "部分",
+    "ai_detection_method": "OCR/ASR+落地页/商品数据比对",
+    "manual_review": "需投手/运营复核",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/110230",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-QC-003",
+    "rule_name": "客户或商品不满足千川准入",
+    "category": "H 千川广告",
+    "sub_category": "资质/准入不符合",
+    "risk_level": "高",
+    "keywords": [
+      "资质缺失",
+      "禁投类目",
+      "授权不足",
+      "品牌风险"
+    ],
+    "standard": "广告主、品牌、商品类目或素材内容不符合巨量千川准入和管控规则",
+    "risk_reason": "千川准入/管控风险",
+    "rectification": "停投并补齐资质或更换商品；建立投放前资质检查清单",
+    "examples": [
+      "无资质商品投放千川广告",
+      "投放前完成资质、品牌授权和类目准入核查"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "广告主资质、商品类目、素材内容",
+    "ai_detectability": "低",
+    "ai_detection_method": "资质台账+商品类目比对+人工复核",
+    "manual_review": "必须人工确认资质",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/110230",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-DY-QC-004",
+    "rule_name": "投放造成负面影响",
+    "category": "H 千川广告",
+    "sub_category": "重大负面舆情/品牌风险",
+    "risk_level": "高",
+    "keywords": [
+      "投诉激增",
+      "虚假宣传争议",
+      "敏感事件蹭热点"
+    ],
+    "standard": "广告投放导致重大负面舆情、消费者投诉或平台品牌风险",
+    "risk_reason": "千川违规处理风险",
+    "rectification": "暂停投放，复盘素材和承接链路；删除敏感点，统一客服解释",
+    "examples": [
+      "蹭敏感事件投放商品广告引发投诉",
+      "投放前审核敏感内容，监控评论和投诉"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "广告内容、评论反馈、投诉舆情",
+    "ai_detectability": "低",
+    "ai_detection_method": "舆情监测+投诉数据+人工复核",
+    "manual_review": "需人工判断舆情性质",
+    "source_url": "https://school.jinritemai.com/doudian/web/article/110230",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-E1-001",
+    "rule_name": "前后对比不符合客观事实",
+    "category": "I 其他",
+    "sub_category": "夸大对比",
+    "risk_level": "高",
+    "keywords": [
+      "前后对比",
+      "秒变",
+      "立刻",
+      "完全",
+      "翻新",
+      "瘦十斤"
+    ],
+    "standard": "前后对比展示不符合真实使用情况，或通过角度、光线、剪辑、特效造成夸大效果",
+    "risk_reason": "效果展示不实，过度提高用户预期；通过剪辑/特效夸大商品效果；公司扣分；虚假宣传风险",
+    "rectification": "删除不真实对比，补充测试条件；“测试环境仅供参考，实际效果因场景而异”；替换真实场景或补充测试条件；“以下为正常使用场景展示，效果以实际体验为准”；补充测试条件，避免保证结果；使用真实穿搭对比并说明尺码",
+    "examples": [
+      "清洁产品前后对比使用不同光线误导效果",
+      "对比条件一致，说明测试环境和限制",
+      "清洁产品宣传极短时间清除顽固墨水印",
+      "通过特效把肚子放大再突然显瘦，夸大裤子显瘦效果"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "对比画面、字幕、口播、特效",
+    "ai_detectability": "中",
+    "ai_detection_method": "多模态+ASR/OCR+人工复核",
+    "manual_review": "对比真实性需人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-E5-001",
+    "rule_name": "选用过往争议性产品/人物内容",
+    "category": "I 其他",
+    "sub_category": "争议性内容",
+    "risk_level": "中",
+    "keywords": [
+      "争议产品",
+      "负面人物",
+      "黑梗",
+      "攻击性热点"
+    ],
+    "standard": "选用争议性产品/人物/热点内容进行营销，可能引发品牌或舆情风险",
+    "risk_reason": "公司扣分；品牌风险",
+    "rectification": "更换选题或素材；回归产品卖点和真实用户场景",
+    "examples": [
+      "用网友恶搞品牌高管内容推广产品",
+      "避开争议话题，选择产品正向价值表达"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "选题、人物、梗、素材来源",
+    "ai_detectability": "中",
+    "ai_detection_method": "关键词+多模态+人工复核",
+    "manual_review": "需人工判断舆情风险",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-E6-001",
+    "rule_name": "歪曲原内容表达",
+    "category": "I 其他",
+    "sub_category": "断章取义/拼接歪曲",
+    "risk_level": "中",
+    "keywords": [
+      "截取片段",
+      "拼接观点",
+      "歪曲原意",
+      "虚假引用"
+    ],
+    "standard": "断章取义、东拼西凑，歪曲原视频表达方向和含义，误导用户",
+    "risk_reason": "误导用户且可能侵权；公司扣分；侵权/虚假宣传风险",
+    "rectification": "删除误导剪辑，补充完整上下文；不引用未经授权或容易误解的素材；删除误导剪辑或补全上下文",
+    "examples": [
+      "剪辑测评视频只保留有利片段，歪曲原测评结论",
+      "引用完整语境，避免误导性剪辑",
+      "截取测评片段歪曲原视频表达"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "引用素材、字幕、剪辑片段",
+    "ai_detectability": "低",
+    "ai_detection_method": "文本相似+来源核验+人工复核",
+    "manual_review": "需要人工核对原视频",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  },
+  {
+    "rule_id": "ML-ALL-E9-001",
+    "rule_name": "添加假冒官方水印或认证",
+    "category": "I 其他",
+    "sub_category": "误导性水印/认证标识",
+    "risk_level": "高",
+    "keywords": [
+      "官方认证",
+      "正品认证",
+      "平台推荐",
+      "央视同款",
+      "官方授权水印"
+    ],
+    "standard": "添加误导性水印、假冒官方认证标志、平台授权标志或第三方背书",
+    "risk_reason": "虚假权威背书，误导消费者；公司扣分；虚假宣传风险",
+    "rectification": "删除虚假认证/水印，保留合法标识；如无授权不使用“官方/认证/推荐”标识；删除无授权标识",
+    "examples": [
+      "画面添加“官方认证”但无授权",
+      "仅使用真实授权Logo/水印，保留证明",
+      "添加“官方认证/平台推荐”水印但无授权"
+    ],
+    "source": "米乐科技短视频质检规范库_V1",
+    "detection_object": "画面水印、角标、认证标、Logo",
+    "ai_detectability": "高",
+    "ai_detection_method": "OCR+Logo识别+授权台账比对",
+    "manual_review": "授权需人工复核",
+    "source_url": "用户上传：米乐科技短视频质检 (1).xlsx / 米乐科技短视频质检规范4.2",
+    "status": "生效"
+  }
+]

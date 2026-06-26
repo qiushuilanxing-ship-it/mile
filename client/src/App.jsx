@@ -9,6 +9,7 @@ import {
 } from "react-router-dom";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
+import DouyinAuditPage from "./DouyinAuditPage.jsx";
 import EnginePage from "./EnginePage.jsx";
 import HomePage from "./HomePage.jsx";
 
@@ -80,6 +81,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/tools/:toolId" element={<EnginePage />} />
+            <Route path="/audit/douyin" element={<DouyinAuditPage />} />
             <Route
               path="/engine"
               element={<Navigate to="/tools/video_reverse" replace />}
@@ -683,6 +685,12 @@ function Sidebar({ user, isOpen, onLogout }) {
           <span>带货文案生成</span>
         </NavLink>
 
+        <span className="sidebar-group-label">内容质检</span>
+        <NavLink to="/audit/douyin">
+          <SidebarIcon type="audit" />
+          <span>短视频质检</span>
+        </NavLink>
+
         <span className="sidebar-group-label">个人中心</span>
         <NavLink to="/dashboard">
           <SidebarIcon type="chart" />
@@ -764,6 +772,8 @@ function SidebarIcon({ type }) {
       "M5 2h7l3 3v13H5a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2Zm6 1v4h4M7 10h6M7 13h6",
     copy:
       "M4 3h9a2 2 0 0 1 2 2v10H6a2 2 0 0 1-2-2Zm3 14h9a1 1 0 0 0 1-1V7M7 7h5M7 10h5",
+    audit:
+      "M10 2 16 4.5V9c0 4.2-2.5 7-6 8.5C6.5 16 4 13.2 4 9V4.5Zm-3 7 2 2 4-4",
     chart: "M3 17V9h3v8Zm6 0V3h3v14Zm6 0v-6h3v6Z",
     history:
       "M4.5 5.5A7 7 0 1 1 3 10M3 4v6h6M10 6v4l3 2",
@@ -780,6 +790,7 @@ function SidebarIcon({ type }) {
 
 function getPageTitle(pathname) {
   if (pathname === "/") return "创作首页";
+  if (pathname === "/audit/douyin") return "抖音短视频质检";
   if (pathname === "/dashboard") return "我的数据";
   if (pathname === "/history") return "历史记录";
   if (pathname === "/admin/dashboard") return "全局数据";

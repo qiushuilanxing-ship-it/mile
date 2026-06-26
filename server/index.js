@@ -1,5 +1,6 @@
-import "dotenv/config";
 import crypto from "node:crypto";
+import { fileURLToPath } from "node:url";
+import dotenv from "dotenv";
 import express from "express";
 import multer from "multer";
 import {
@@ -20,14 +21,62 @@ import {
   prepareGenerationRequest,
 } from "./generation-engine.js";
 import {
+  processInSequentialBatches,
+  summarizeAuditResults,
+  withTimeout,
+} from "./audit-batches.js";
+import {
+  AccountProfileImportError,
+  getAccountProfileMap,
+  loadAccountProfiles,
+  parseAccountProfilesWorkbook,
+  pickAccountProfileFields,
+  saveAccountProfiles,
+} from "./account-profiles.js";
+import {
+  buildDouyinVideos,
+  DouyinCrawlerError,
+  DouyinRangeError,
+  extractDouyinAwemeList,
+  getCreateTimeSeconds,
+  normalizeAccountTaskRangeType,
+  normalizeSecUid,
+  resolveAccountTaskRangeInput,
+  resolveDouyinRange,
+} from "./douyin-audit.js";
+import {
+  AiAuditConfigurationError,
+  AiAuditInputError,
+  buildAuditItems,
+  loadQualityRules,
+  prepareAuditVideos,
+} from "./douyin-ai-audit.js";
+import {
+  auditVideoWithText,
+  auditVideoWithVision,
+  buildTextAuditPrompt,
+  createAuditDebugDetails,
+  createProviderFallback,
+  isValidVideoUrl,
+  LLMConfigurationError,
+  LLMProviderError,
+} from "./services/llmClient.js";
+import {
   extractWorkflowResultWithFallback,
   isEmptyWorkflowResult,
 } from "./coze-stream.js";
 import { logError, logInfo } from "./logger.js";
 import { acquireUserRequest } from "./request-guard.js";
 
+dotenv.config({
+  path: fileURLToPath(new URL("./.env", import.meta.url)),
+});
+
 const app = express();
 const port = Number(process.env.PORT) || 3001;
+const CRAWLER_BASE_URL = (
+  process.env.CRAWLER_BASE_URL || "http://127.0.0.1:8080"
+).replace(/\/+$/, "");
 const maxVideoSize = 100 * 1024 * 1024;
 const maxImageSize = 20 * 1024 * 1024;
 const configuredMaxImageCount = Number(process.env.MAX_IMAGE_COUNT);
@@ -35,6 +84,7 @@ const maxImageCount =
   Number.isInteger(configuredMaxImageCount) && configuredMaxImageCount > 0
     ? configuredMaxImageCount
     : 10;
+logAiConfiguration();
 const acceptedVideoTypes = new Set([
   "video/mp4",
   "video/quicktime",
@@ -67,6 +117,20 @@ const upload = multer({
     return callback(null, true);
   },
 });
+const accountListUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: {
+    fileSize: 10 * 1024 * 1024,
+    files: 1,
+  },
+  fileFilter(_request, file, callback) {
+    const isXlsx = file.originalname.toLowerCase().endsWith(".xlsx");
+
+    return isXlsx
+      ? callback(null, true)
+      : callback(new Error("ACCOUNT_LIST_XLSX_REQUIRED"));
+  },
+});
 
 app.use((request, response, next) => {
   const clientRequestId = request.get("X-Request-Id")?.trim();
@@ -77,7 +141,7 @@ app.use((request, response, next) => {
   response.setHeader("X-Request-Id", request.requestId);
   next();
 });
-app.use(express.json({ limit: "100kb" }));
+app.use(express.json({ limit: "5mb" }));
 
 app.get("/api/health", (_request, response) => {
   return sendSuccess(response, { ok: true });
@@ -114,6 +178,1020 @@ app.get("/api/auth/me", requireAuth, (request, response) => {
 });
 
 app.use("/api", requireAuth);
+
+app.post("/api/audit/account-list/import", (request, response) => {
+  accountListUpload.single("file")(request, response, (uploadError) => {
+    if (uploadError) {
+      if (uploadError instanceof multer.MulterError) {
+        const message =
+          uploadError.code === "LIMIT_FILE_SIZE"
+            ? "质检名单不能超过 10MB。"
+            : "质检名单上传失败，请重新选择文件。";
+        return sendFailure(
+          response,
+          uploadError.code === "LIMIT_FILE_SIZE" ? 413 : 400,
+          message,
+          "ACCOUNT_PROFILE_UPLOAD_FAILED",
+        );
+      }
+
+      return sendFailure(
+        response,
+        400,
+        uploadError.message === "ACCOUNT_LIST_XLSX_REQUIRED"
+          ? "质检名单仅支持 .xlsx 文件。"
+          : "质检名单上传失败，请重新选择文件。",
+        "ACCOUNT_PROFILE_UPLOAD_FAILED",
+      );
+    }
+
+    if (!request.file) {
+      return sendFailure(
+        response,
+        400,
+        "请选择要上传的质检名单 Excel。",
+        "ACCOUNT_PROFILE_FILE_REQUIRED",
+      );
+    }
+
+    try {
+      const sourceFileName = normalizeUploadFileName(request.file.originalname);
+      const importResult = parseAccountProfilesWorkbook(request.file.buffer, {
+        uidColumn: request.body?.uidColumn,
+      });
+      const saved = saveAccountProfiles(
+        importResult,
+        sourceFileName,
+      );
+      logInfo("douyin.account_profiles.imported", {
+        ...requestContext(request),
+        source_file: sourceFileName,
+        imported_count: importResult.imported_count,
+        missing_uid_count: importResult.missing_uid_count,
+        duplicate_uid_count: importResult.duplicate_uid_count,
+      });
+      return sendSuccess(response, {
+        count: saved.accounts.length,
+        accounts: saved.accounts,
+        imported_at: saved.imported_at,
+        source_file: saved.source_file,
+        stats: saved.stats,
+      });
+    } catch (error) {
+      const isImportError = error instanceof AccountProfileImportError;
+      logError("douyin.account_profiles.import_failed", error, {
+        ...requestContext(request),
+        source_file: normalizeUploadFileName(request.file.originalname),
+      });
+      return sendFailure(
+        response,
+        isImportError ? 400 : 500,
+        isImportError
+          ? error.message
+          : "质检名单解析失败，请检查 Excel 内容后重试。",
+        error.code ?? "ACCOUNT_PROFILE_IMPORT_FAILED",
+      );
+    }
+  });
+});
+
+app.get("/api/audit/account-list", (request, response) => {
+  try {
+    const store = loadAccountProfiles();
+    return sendSuccess(response, {
+      count: store.accounts.length,
+      accounts: store.accounts,
+      imported_at: store.imported_at,
+      source_file: store.source_file,
+      stats: store.stats,
+    });
+  } catch (error) {
+    logError("douyin.account_profiles.read_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      error.message || "账号资料库读取失败，请重新上传质检名单。",
+      error.code ?? "ACCOUNT_PROFILE_READ_FAILED",
+    );
+  }
+});
+
+app.post("/api/audit/douyin-account", async (request, response) => {
+  const profileMap = getAccountProfileMap();
+  const { defaultRangeInput, accountTasks } = normalizeAccountTasks(
+    request.body,
+    profileMap,
+  );
+
+  if (accountTasks.length === 0) {
+    return sendFailure(
+      response,
+      400,
+      "请填写至少一个抖音账号 secUid",
+      "DOUYIN_SEC_UID_REQUIRED",
+    );
+  }
+
+  if (accountTasks.length > 10) {
+    return sendFailure(
+      response,
+      400,
+      "一次最多支持 10 个抖音账号。",
+      "DOUYIN_SEC_UID_LIMIT_EXCEEDED",
+    );
+  }
+
+  let defaultRange;
+
+  try {
+    defaultRange = resolveDouyinRange(defaultRangeInput);
+  } catch (error) {
+    if (error instanceof DouyinRangeError) {
+      return sendFailure(
+        response,
+        400,
+        error.message,
+        "DOUYIN_DATE_RANGE_INVALID",
+      );
+    }
+
+    throw error;
+  }
+
+  console.log(
+    "[douyin audit] accountTasks:",
+    accountTasks.map((task) => ({
+      secUid: task.secUid,
+      rangeType: task.rangeType,
+      startDate: task.startDate,
+      endDate: task.endDate,
+    })),
+  );
+  console.log("[douyin audit] CRAWLER_BASE_URL:", CRAWLER_BASE_URL);
+  console.log(
+    "[douyin audit] request url:",
+    `${CRAWLER_BASE_URL}/douyin/user`,
+  );
+  console.log("[douyin audit] default range:", {
+    rangeType: defaultRange.rangeType,
+    startDate: defaultRange.startDate,
+    endDate: defaultRange.endDate,
+  });
+
+  try {
+    const accounts = [];
+    const videos = [];
+    let totalFetched = 0;
+
+    for (
+      let accountIndex = 0;
+      accountIndex < accountTasks.length;
+      accountIndex += 1
+    ) {
+      const task = accountTasks[accountIndex];
+      let accountRange;
+      const resolvedRangeInput = resolveAccountTaskRangeInput(
+        task,
+        defaultRange,
+      );
+
+      console.log("[Douyin Account Fetch] account_index:", accountIndex + 1);
+      console.log(
+        "[Douyin Account Fetch] frontend_name:",
+        task.profile?.frontend_name || "",
+      );
+      console.log("[Douyin Account Fetch] secUid:", task.secUid);
+      console.log(
+        "[Douyin Account Fetch] secUid length:",
+        task.secUid.length,
+      );
+      console.log(
+        "[Douyin Account Fetch] rangeType:",
+        resolvedRangeInput.rangeType,
+      );
+      console.log(
+        "[Douyin Account Fetch] startDate:",
+        resolvedRangeInput.startDate || "",
+      );
+      console.log(
+        "[Douyin Account Fetch] endDate:",
+        resolvedRangeInput.endDate || "",
+      );
+      console.log(
+        "[Douyin Account Fetch] crawler url:",
+        `${CRAWLER_BASE_URL}/douyin/user`,
+      );
+
+      try {
+        if (!task.secUid) {
+          throw new DouyinCrawlerError(
+            "secUid为空，无法获取视频",
+            "DOUYIN_SEC_UID_EMPTY",
+          );
+        }
+
+        accountRange = resolveDouyinRange(resolvedRangeInput);
+        const account = await fetchDouyinAccountVideos({
+          secUid: task.secUid,
+          accountIndex: accountIndex + 1,
+          range: accountRange,
+          profile: task.profile,
+          profileMatched: task.profileMatched,
+        });
+        accounts.push(account);
+        videos.push(...account.videos);
+        totalFetched += account.totalFetched;
+      } catch (accountError) {
+        const accountMessage = getDouyinAccountErrorMessage(accountError);
+        console.error("[Douyin Account Fetch] error message:", accountMessage);
+        console.error(
+          "[Douyin Account Fetch] error status:",
+          accountError.response?.status ?? accountError.crawlerStatus,
+        );
+        console.error(
+          "[Douyin Account Fetch] error data:",
+          accountError.response?.data ?? accountError.crawlerData,
+        );
+        logError("douyin.audit.account_failed", accountError, {
+          ...requestContext(request),
+          sec_uid: task.secUid,
+          account_index: accountIndex + 1,
+        });
+        accounts.push({
+          account_index: accountIndex + 1,
+          secUid: task.secUid,
+          author_name: "",
+          ...pickAccountProfileFields(task.profile),
+          profile_matched: task.profileMatched,
+          range_label: accountRange
+            ? formatRangeLabel(accountRange)
+            : getTaskRangeLabel(task, defaultRange),
+          range_type:
+            accountRange?.rangeType ??
+            (task.rangeType === "default"
+              ? defaultRange.rangeType
+              : task.rangeType),
+          count: 0,
+          status: "failed",
+          message: accountMessage,
+          videos: [],
+          totalFetched: 0,
+        });
+      }
+    }
+
+    videos.sort(
+      (left, right) =>
+        Number(right.create_time_ts) - Number(left.create_time_ts),
+    );
+    videos.forEach((video, index) => {
+      video.index = index + 1;
+    });
+    const responsePayload = {
+      count: videos.length,
+      videos,
+      accounts: accounts.map(
+        ({ totalFetched: _totalFetched, ...account }) => account,
+      ),
+      summary: {
+        account_count: accounts.length,
+        video_count: videos.length,
+        success_count: accounts.filter((account) => account.status === "success")
+          .length,
+        failed_count: accounts.filter((account) => account.status === "failed")
+          .length,
+      },
+      defaultRange: {
+        rangeType: defaultRange.rangeType,
+        startDate: defaultRange.startDate,
+        endDate: defaultRange.endDate,
+      },
+      totalFetched,
+    };
+
+    if (videos.length === 0) {
+      return sendSuccess(response, {
+        ...responsePayload,
+        message: "该时间范围内未获取到视频",
+      });
+    }
+
+    logInfo("douyin.audit.loaded", {
+      ...requestContext(request),
+      account_count: accounts.length,
+      success_count: responsePayload.summary.success_count,
+      failed_count: responsePayload.summary.failed_count,
+      count: videos.length,
+      total_fetched: totalFetched,
+      default_range_type: defaultRange.rangeType,
+    });
+    return sendSuccess(response, responsePayload);
+  } catch (error) {
+    console.error("[douyin audit] crawler error message:", error.message);
+    console.error("[douyin audit] crawler error stack:", error.stack);
+    console.error(
+      "[douyin audit] crawler response status:",
+      error.response?.status ?? error.crawlerStatus,
+    );
+    console.error(
+      "[douyin audit] crawler response data:",
+      error.response?.data ?? error.crawlerData,
+    );
+    logError("douyin.audit.failed", error, requestContext(request));
+    const developmentDetails =
+      process.env.NODE_ENV === "production"
+        ? {}
+        : {
+            detail: error.message,
+            crawlerBaseUrl: CRAWLER_BASE_URL,
+          };
+
+    return response.status(502).json({
+      success: false,
+      message: "视频数据获取失败",
+      code: "DOUYIN_CRAWLER_UNAVAILABLE",
+      ...developmentDetails,
+      request_id: request.requestId,
+    });
+  }
+});
+
+function normalizeAccountTasks(body, profileMap = new Map()) {
+  const defaultRangeInput = {
+    rangeType:
+      body?.defaultRange?.rangeType ?? body?.rangeType ?? "last7",
+    startDate: body?.defaultRange?.startDate ?? body?.startDate,
+    endDate: body?.defaultRange?.endDate ?? body?.endDate,
+  };
+  const rawTasks =
+    Array.isArray(body?.accountTasks) && body.accountTasks.length > 0
+      ? body.accountTasks
+      : normalizeSecUidValues(body).map((secUid) => ({
+          secUid,
+          rangeType: "default",
+        }));
+  const seen = new Set();
+  const accountTasks = [];
+
+  for (const rawTask of rawTasks) {
+    const secUid = normalizeSecUid(rawTask?.secUid);
+    if (secUid && seen.has(secUid)) continue;
+    if (secUid) seen.add(secUid);
+    const storedProfile = profileMap.get(secUid);
+    const requestedRangeType = normalizeAccountTaskRangeType(
+      rawTask?.rangeType,
+    );
+    accountTasks.push({
+      secUid,
+      rangeType: requestedRangeType,
+      startDate: String(rawTask?.startDate ?? "").trim(),
+      endDate: String(rawTask?.endDate ?? "").trim(),
+      profile: storedProfile
+        ? { ...storedProfile }
+        : {
+            secUid,
+            ...pickAccountProfileFields(rawTask),
+          },
+      profileMatched:
+        Boolean(storedProfile) || rawTask?.profile_matched === true,
+    });
+  }
+
+  return { defaultRangeInput, accountTasks };
+}
+
+function normalizeSecUidValues(body) {
+  const candidates = Array.isArray(body?.secUids)
+    ? body.secUids
+    : typeof body?.secUid === "string"
+      ? [body.secUid]
+      : [];
+
+  return [
+    ...new Set(
+      candidates
+        .flatMap((value) => String(value ?? "").split(/[\s,，]+/u))
+        .map(normalizeSecUid)
+        .filter(Boolean),
+    ),
+  ];
+}
+
+async function fetchDouyinAccountVideos({
+  secUid,
+  accountIndex,
+  range,
+  profile,
+  profileMatched,
+}) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  const uniqueAwemes = new Map();
+  const pageLimit = 20;
+  const maxPages = 10;
+
+  try {
+    for (let page = 0; page < maxPages; page += 1) {
+      const offset = page * pageLimit;
+      const requestUrl =
+        `${CRAWLER_BASE_URL}/douyin/user` +
+        `?id=${encodeURIComponent(secUid)}` +
+        `&offset=${offset}&limit=${pageLimit}`;
+      const crawlerResponse = await fetch(requestUrl, {
+        method: "GET",
+        signal: controller.signal,
+      });
+      const responseText = await crawlerResponse.text();
+      let crawlerData;
+
+      try {
+        crawlerData = responseText ? JSON.parse(responseText) : null;
+      } catch {
+        const parseError = new DouyinCrawlerError(
+          "Crawler 返回内容不是有效 JSON。",
+        );
+        parseError.crawlerStatus = crawlerResponse.status;
+        parseError.crawlerData = responseText.slice(0, 2000);
+        throw parseError;
+      }
+
+      const pageAwemes = Array.isArray(crawlerData?.data?.aweme_list)
+        ? crawlerData.data.aweme_list
+        : [];
+      console.log("[douyin audit] account:", accountIndex, secUid);
+      console.log("[douyin audit] crawler page:", page + 1);
+      console.log("[douyin audit] crawler status:", crawlerResponse.status);
+      console.log("[douyin audit] aweme count:", pageAwemes.length);
+
+      if (!crawlerResponse.ok) {
+        const crawlerMessage = extractCrawlerErrorDetail(crawlerData);
+        const crawlerError = new DouyinCrawlerError(
+          `Crawler 返回 ${crawlerResponse.status}${
+            crawlerMessage ? `：${crawlerMessage}` : ""
+          }`,
+        );
+        crawlerError.crawlerStatus = crawlerResponse.status;
+        crawlerError.crawlerData = crawlerData;
+        throw crawlerError;
+      }
+
+      if (Number(crawlerData?.code) !== 0) {
+        const crawlerMessage = extractCrawlerErrorDetail(crawlerData);
+        const crawlerError = new DouyinCrawlerError(
+          `Crawler 返回 code ${crawlerData?.code ?? "unknown"}${
+            crawlerMessage ? `：${crawlerMessage}` : ""
+          }`,
+        );
+        crawlerError.crawlerStatus = crawlerResponse.status;
+        crawlerError.crawlerData = crawlerData;
+        throw crawlerError;
+      }
+
+      const validatedAwemes = extractDouyinAwemeList(crawlerData);
+      const sizeBeforePage = uniqueAwemes.size;
+
+      for (const aweme of validatedAwemes) {
+        const videoId = String(
+          aweme?.aweme_id ?? aweme?.video_id ?? "",
+        ).trim();
+        if (videoId && !uniqueAwemes.has(videoId)) {
+          uniqueAwemes.set(videoId, aweme);
+        }
+      }
+
+      const matchingVideoCount = [...uniqueAwemes.values()].filter((aweme) => {
+        const timestamp = getCreateTimeSeconds(aweme);
+        return timestamp >= range.startTime && timestamp <= range.endTime;
+      }).length;
+      const allPageVideosAreOlder =
+        validatedAwemes.length > 0 &&
+        validatedAwemes.every(
+          (aweme) => getCreateTimeSeconds(aweme) < range.startTime,
+        );
+      const pageAddedNoNewVideos = uniqueAwemes.size === sizeBeforePage;
+
+      if (
+        validatedAwemes.length < pageLimit ||
+        allPageVideosAreOlder ||
+        pageAddedNoNewVideos ||
+        matchingVideoCount >= 50
+      ) {
+        break;
+      }
+    }
+
+    const accountVideos = buildDouyinVideos([...uniqueAwemes.values()], {
+      startTime: range.startTime,
+      endTime: range.endTime,
+      limit: 50,
+    }).map((video) => ({
+      ...video,
+      secUid,
+      account_index: accountIndex,
+      ...pickAccountProfileFields(profile),
+      profile_matched: profileMatched,
+      account_range_label: formatRangeLabel(range),
+      account_range_type: range.rangeType,
+    }));
+    const authorName =
+      accountVideos.find((video) => video.author_name)?.author_name || "";
+
+    return {
+      account_index: accountIndex,
+      secUid,
+      author_name: authorName,
+      ...pickAccountProfileFields(profile),
+      profile_matched: profileMatched,
+      range_label: formatRangeLabel(range),
+      range_type: range.rangeType,
+      count: accountVideos.length,
+      status: "success",
+      message: "",
+      videos: accountVideos,
+      totalFetched: uniqueAwemes.size,
+    };
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+function extractCrawlerErrorDetail(data) {
+  const detail = data?.detail ?? data?.msg ?? data?.message ?? data?.error;
+
+  if (Array.isArray(detail)) {
+    return detail
+      .map((item) => item?.msg ?? item?.message ?? JSON.stringify(item))
+      .filter(Boolean)
+      .join("；");
+  }
+
+  if (detail && typeof detail === "object") {
+    return JSON.stringify(detail);
+  }
+
+  return String(detail ?? "").trim();
+}
+
+function getDouyinAccountErrorMessage(error) {
+  if (error?.name === "AbortError") {
+    return "Crawler timeout：请求超过120秒";
+  }
+
+  if (error instanceof TypeError && /fetch|network/iu.test(error.message)) {
+    return `Crawler 网络请求失败：${error.message}`;
+  }
+
+  return error?.message || "账号作品获取失败";
+}
+
+function formatRangeLabel(range) {
+  return range.rangeType === "custom"
+    ? `${range.startDate} 至 ${range.endDate}`
+    : {
+        last3: "最近3天",
+        last7: "最近7天",
+        last30: "最近30天",
+      }[range.rangeType] ?? `${range.startDate} 至 ${range.endDate}`;
+}
+
+function getTaskRangeLabel(task, defaultRange) {
+  if (task.rangeType === "default") {
+    return `跟随默认 · ${formatRangeLabel(defaultRange)}`;
+  }
+
+  if (task.rangeType === "custom") {
+    return task.startDate && task.endDate
+      ? `${task.startDate} 至 ${task.endDate}`
+      : "自定义日期";
+  }
+
+  return {
+    last3: "最近3天",
+    last7: "最近7天",
+    last30: "最近30天",
+  }[task.rangeType] ?? task.rangeType;
+}
+
+app.post("/api/audit/douyin-videos", async (request, response) => {
+  try {
+    const testLimit = Number(request.body?.testLimit) === 3 ? 3 : null;
+    const requestedVideos = Array.isArray(request.body?.videos)
+      ? request.body.videos.slice(0, testLimit ?? undefined)
+      : request.body?.videos;
+    const videos = prepareAuditVideos(requestedVideos);
+    const rules = loadQualityRules();
+    const auditItems = buildAuditItems(videos, rules);
+    const aiBaseUrl = process.env.AI_BASE_URL?.trim();
+    const aiApiKey = process.env.AI_API_KEY?.trim();
+    const aiModel = process.env.AI_MODEL?.trim();
+    const aiApiType =
+      process.env.AI_API_TYPE?.trim().toLowerCase() === "responses"
+        ? "responses"
+        : "chat_completions";
+    const includeAuditDebug = process.env.NODE_ENV !== "production";
+    const batchSize = resolveIntegerSetting(
+      process.env.AI_AUDIT_BATCH_SIZE,
+      2,
+      1,
+      5,
+    );
+    const itemTimeoutMs = resolveIntegerSetting(
+      process.env.AI_AUDIT_ITEM_TIMEOUT_MS,
+      90_000,
+      10_000,
+      120_000,
+    );
+
+    logAiConfiguration();
+    console.log("[AI Audit] total videos:", videos.length);
+    console.log("[AI Audit] batch size:", batchSize);
+
+    if (!aiBaseUrl || !aiApiKey || !aiModel) {
+      throw new LLMConfigurationError(
+        "AI 质检模型尚未配置，请设置 AI_BASE_URL、AI_API_KEY 和 AI_MODEL。",
+      );
+    }
+
+    const auditOneVideo = async (item) => {
+        const modelOptions = {
+          baseUrl: aiBaseUrl,
+          apiKey: aiApiKey,
+          model: aiModel,
+          apiType: aiApiType,
+          includeDebug: includeAuditDebug,
+        };
+        const hasVideoUrl = isValidVideoUrl(item.play_url);
+
+        if (hasVideoUrl) {
+          try {
+            return markAuditCompleted(
+              await auditVideoWithVision(
+                item,
+                item.matched_rules,
+                modelOptions,
+              ),
+              item,
+            );
+          } catch (visualError) {
+            if (!(visualError instanceof LLMProviderError)) {
+              throw visualError;
+            }
+
+            logError("douyin.ai_audit.vision_failed", visualError, {
+              ...requestContext(request),
+              video_id: item.video_id,
+              provider_status: visualError.status,
+            });
+            const visualErrorMessage =
+              aiApiType === "responses"
+                ? `Responses API video_url unsupported or failed：${visualError.message}`
+                : visualError.message;
+
+            if (shouldSkipTextFallback(visualError)) {
+              return buildFinalAuditFallback({
+                item,
+                error: visualError,
+                includeAuditDebug,
+                auditMode: "text_fallback",
+                visualStatus: "failed",
+                visualError: visualErrorMessage,
+                request,
+              });
+            }
+
+            try {
+              return markAuditCompleted(
+                await auditVideoWithText(item, item.matched_rules, {
+                  ...modelOptions,
+                  auditMode: "text_fallback",
+                  visualStatus: "failed",
+                  visualError: visualErrorMessage,
+                }),
+                item,
+              );
+            } catch (textError) {
+              return buildFinalAuditFallback({
+                item,
+                error: textError,
+                includeAuditDebug,
+                auditMode: "text_fallback",
+                visualStatus: "failed",
+                visualError: visualErrorMessage,
+                request,
+              });
+            }
+          }
+        }
+
+        const visualStatus = item.play_url
+          ? "invalid_video_url"
+          : "no_video_url";
+        const visualError = item.play_url
+          ? "play_url 不是可识别的视频链接。"
+          : "";
+
+        try {
+          return markAuditCompleted(
+            await auditVideoWithText(item, item.matched_rules, {
+              ...modelOptions,
+              auditMode: "text",
+              visualStatus,
+              visualError,
+            }),
+            item,
+          );
+        } catch (textError) {
+          return buildFinalAuditFallback({
+            item,
+            error: textError,
+            includeAuditDebug,
+            auditMode: "text",
+            visualStatus,
+            visualError,
+            request,
+          });
+        }
+    };
+    const auditOneVideoSafely = async (item) => {
+      console.log("[AI Audit] video start:", item.video_id);
+
+      try {
+        const result = await withTimeout(
+          auditOneVideo(item),
+          itemTimeoutMs,
+          "单条视频AI质检超时",
+        );
+        console.log("[AI Audit] video done:", item.video_id);
+        return result;
+      } catch (error) {
+        console.error(
+          "[AI Audit] video failed:",
+          item.video_id,
+          error.message,
+        );
+        return buildAuditItemFailure(item, error, {
+          model: aiModel,
+          apiType: aiApiType,
+          includeAuditDebug,
+        });
+      }
+    };
+    const results = await processInSequentialBatches(
+      auditItems,
+      auditOneVideoSafely,
+      batchSize,
+      {
+        onBatchStart({ batchIndex }) {
+          console.log("[AI Audit] batch start:", batchIndex + 1);
+        },
+        onBatchEnd({ batchIndex }) {
+          console.log("[AI Audit] batch done:", batchIndex + 1);
+        },
+      },
+    );
+    const localMatchedCount = auditItems.filter(
+      (item) => item.matched_rules.length > 0,
+    ).length;
+    const fallbackCount = results.filter(
+      (result) =>
+        result.audit_result === "建议人工复核" &&
+        result.main_risks.some((risk) => risk.startsWith("AI 质检")),
+    ).length;
+    const visionCount = results.filter(
+      (result) => result.audit_mode === "video",
+    ).length;
+    const textFallbackCount = results.filter(
+      (result) => result.audit_mode === "text_fallback",
+    ).length;
+    const auditSummary = summarizeAuditResults(results);
+
+    logInfo("douyin.ai_audit.completed", {
+      ...requestContext(request),
+      video_count: videos.length,
+      local_matched_count: localMatchedCount,
+      model: process.env.AI_MODEL?.trim(),
+      api_type: aiApiType,
+      fallback_count: fallbackCount,
+      vision_count: visionCount,
+      text_fallback_count: textFallbackCount,
+      batch_size: batchSize,
+      batch_count: Math.ceil(auditItems.length / batchSize),
+    });
+    return sendSuccess(response, {
+      count: results.length,
+      results,
+      local_matched_count: localMatchedCount,
+      rules_count: rules.length,
+      fallback_count: fallbackCount,
+      vision_count: visionCount,
+      text_fallback_count: textFallbackCount,
+      summary: auditSummary,
+      batch_size: batchSize,
+      item_timeout_ms: itemTimeoutMs,
+      test_limit: testLimit,
+    });
+  } catch (error) {
+    if (error instanceof AiAuditInputError) {
+      return sendFailure(
+        response,
+        400,
+        error.message,
+        "DOUYIN_AI_AUDIT_INPUT_INVALID",
+      );
+    }
+
+    if (
+      error instanceof AiAuditConfigurationError ||
+      error instanceof LLMConfigurationError
+    ) {
+      logError(
+        "douyin.ai_audit.configuration_error",
+        error,
+        requestContext(request),
+      );
+      return sendFailure(
+        response,
+        503,
+        error.message,
+        "DOUYIN_AI_AUDIT_NOT_CONFIGURED",
+      );
+    }
+
+    if (error instanceof LLMProviderError) {
+      logError("douyin.ai_audit.provider_error", error, {
+        ...requestContext(request),
+        provider_status: error.status,
+      });
+      return sendFailure(
+        response,
+        502,
+        "AI 质检服务调用失败，请稍后重试。",
+        error.code === "AI_MODEL_LIMIT_REACHED"
+          ? "AI_MODEL_LIMIT_REACHED"
+          : "DOUYIN_AI_AUDIT_PROVIDER_FAILED",
+        {
+          status: error.status,
+          detail: error.detail || error.message,
+          model_used: error.model_used,
+          api_type: error.api_type,
+        },
+      );
+    }
+
+    throw error;
+  }
+});
+
+function buildAuditItemFailure(
+  item,
+  error,
+  { model, apiType, includeAuditDebug },
+) {
+  const isTimeout =
+    error?.code === "AI_AUDIT_ITEM_TIMEOUT" ||
+    /超时|timeout/iu.test(error?.message ?? "");
+  const message = isTimeout
+    ? "单条视频AI质检超时"
+    : error?.message || "AI质检失败";
+  const result = {
+    video_id: item.video_id,
+    ...getAuditSourceFields(item),
+    audit_result: "建议人工复核",
+    risk_level: "低",
+    main_risks: [isTimeout ? "AI质检超时" : "AI质检失败"],
+    hit_rules: [],
+    evidence: "",
+    visual_evidence: "",
+    problem_description: isTimeout
+      ? "该视频AI质检超时，建议人工复核"
+      : "该视频质检失败，建议人工复核",
+    rectification_suggestion: "建议人工查看该视频，或稍后重新质检",
+    need_human_review: true,
+    audit_status: isTimeout ? "timeout" : "failed",
+    audit_mode: "failed",
+    visual_status: isTimeout ? "timeout" : "failed",
+    visual_error: message,
+    error_message: message,
+    model_used: model,
+    api_type: apiType,
+  };
+
+  if (!includeAuditDebug) return result;
+
+  return {
+    ...result,
+    debug:
+      error?.auditDebug ??
+      createAuditDebugDetails({
+        video: item,
+        matchedRules: item.matched_rules,
+        userPrompt: buildTextAuditPrompt(item, item.matched_rules),
+        rawResponse: error?.raw ?? {
+          error: message,
+          status: error?.status ?? null,
+        },
+        model,
+        apiType,
+        auditMode: "failed",
+        visualStatus: result.visual_status,
+        visualError: message,
+      }),
+  };
+}
+
+function shouldSkipTextFallback(error) {
+  return (
+    error?.code === "AI_MODEL_LIMIT_REACHED" ||
+    [401, 403, 429].includes(Number(error?.status))
+  );
+}
+
+function buildFinalAuditFallback({
+  item,
+  error,
+  includeAuditDebug,
+  auditMode,
+  visualStatus,
+  visualError,
+  request,
+}) {
+  if (!(error instanceof LLMProviderError)) {
+    throw error;
+  }
+
+  logError("douyin.ai_audit.text_failed", error, {
+    ...requestContext(request),
+    video_id: item.video_id,
+    provider_status: error.status,
+  });
+  const fallback = createProviderFallback(item, error, {
+    auditMode,
+    visualStatus,
+    visualError,
+    model: error.model_used ?? process.env.AI_MODEL?.trim(),
+    apiType: error.api_type ?? process.env.AI_API_TYPE?.trim(),
+  });
+  const failedResult = {
+    ...fallback,
+    ...getAuditSourceFields(item),
+    main_risks: ["AI质检失败"],
+    problem_description: "该视频质检失败，建议人工复核",
+    need_human_review: true,
+    audit_status: "failed",
+    error_message: error.message || "AI 质检失败",
+  };
+
+  if (!includeAuditDebug) {
+    return failedResult;
+  }
+
+  return {
+    ...failedResult,
+    debug:
+      error.auditDebug ??
+      createAuditDebugDetails({
+        video: item,
+        matchedRules: item.matched_rules,
+        userPrompt: buildTextAuditPrompt(item, item.matched_rules),
+        rawResponse: error.raw ?? {
+          error: error.message,
+          status: error.status ?? null,
+        },
+        model: error.model_used ?? process.env.AI_MODEL?.trim(),
+        apiType: error.api_type ?? process.env.AI_API_TYPE?.trim(),
+        auditMode,
+        visualStatus,
+        visualError,
+      }),
+  };
+}
+
+function markAuditCompleted(result, item) {
+  return {
+    ...result,
+    ...getAuditSourceFields(item),
+    audit_status: "completed",
+    error_message: "",
+  };
+}
+
+function getAuditSourceFields(item) {
+  return {
+    secUid: item.secUid,
+    account_index: item.account_index,
+    author_name: item.author_name,
+    frontend_name: item.frontend_name,
+    erp_name: item.erp_name,
+    operator: item.operator,
+    douyin_id: item.douyin_id,
+    door_no: item.door_no,
+    business_status: item.business_status,
+    live_status: item.live_status,
+    profile_matched: item.profile_matched,
+    account_range_label: item.account_range_label,
+    account_range_type: item.account_range_type,
+  };
+}
 
 app.get("/api/history", (request, response) => {
   try {
@@ -590,6 +1668,19 @@ function sendSuccess(response, payload = {}, status = 200) {
   });
 }
 
+function normalizeUploadFileName(value) {
+  const fileName = String(value ?? "").trim();
+  if (!fileName) return "";
+
+  const canBeLatin1 = [...fileName].every(
+    (character) => character.codePointAt(0) <= 255,
+  );
+  if (!canBeLatin1) return fileName;
+
+  const decoded = Buffer.from(fileName, "latin1").toString("utf8");
+  return decoded.includes("\uFFFD") ? fileName : decoded;
+}
+
 function sendFailure(
   response,
   status,
@@ -613,6 +1704,23 @@ function requestContext(request) {
     method: request.method,
     path: request.originalUrl,
   };
+}
+
+function resolveIntegerSetting(value, fallback, minimum, maximum) {
+  const number = Number(value);
+  return Number.isInteger(number) && number >= minimum && number <= maximum
+    ? number
+    : fallback;
+}
+
+function logAiConfiguration() {
+  const apiType =
+    process.env.AI_API_TYPE?.trim().toLowerCase() === "responses"
+      ? "responses"
+      : "chat_completions";
+  console.log("[AI Config] AI_MODEL:", process.env.AI_MODEL?.trim() || "");
+  console.log("[AI Config] AI_API_TYPE:", apiType);
+  console.log("[AI Config] AI_BASE_URL:", process.env.AI_BASE_URL?.trim() || "");
 }
 
 app.use((error, request, response, _next) => {
