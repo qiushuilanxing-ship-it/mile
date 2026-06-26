@@ -103,6 +103,7 @@ test("vision prompt treats routine price and subsidy expressions as normal activ
   assert.match(prompt, /常规电商活动表达，本身不等于违规/u);
   assert.match(prompt, /没有极限词、站外导流、价格冲突、强承诺或明显规则缺失时，应判“通过”/u);
   assert.match(prompt, /RedMi X85 2026 直播间国补到手4419/u);
+  assert.match(prompt, /risk_level 为“无”/u);
   assert.match(prompt, /need_human_review=false/u);
 });
 
@@ -118,6 +119,7 @@ test("text prompt does not escalate routine activity wording to manual review", 
   assert.match(prompt, /不要因为出现国补、到手价、直播间福利/u);
   assert.match(prompt, /自动输出“建议人工复核”/u);
   assert.match(prompt, /没有其他违规证据，应判“通过”/u);
+  assert.match(prompt, /risk_level 必须为“无”/u);
   assert.match(prompt, /need_human_review=false/u);
 });
 

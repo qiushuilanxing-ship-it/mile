@@ -9,17 +9,32 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "company-ai-tools-"));
   const databasePath = path.join(directory, "test.db");
   process.env.SQLITE_PATH = databasePath;
+  process.env.ADMIN_USERNAME = "admin";
+  process.env.ADMIN_PASSWORD = "StrongAdminPass!2026";
+  process.env.ADMIN_NAME = "管理员";
 
   const database = await import(`./database.js?test=${Date.now()}`);
 
   try {
-    const admin = database.authenticateUser("admin", "admin");
-    const content = database.authenticateUser("content", "content");
-    const ops = database.authenticateUser("ops", "ops");
+    const admin = database.authenticateUser("admin", "StrongAdminPass!2026");
+    const content = database.upsertUser({
+      username: "content",
+      password: "ContentPass!2026",
+      role: "content",
+      department: "content",
+    });
+    const ops = database.upsertUser({
+      username: "ops",
+      password: "OpsPass!2026",
+      role: "viewer",
+      department: "ops",
+    });
 
     assert.equal(admin.role, "admin");
+    assert.equal(admin.name, "管理员");
     assert.equal(content.role, "content");
     assert.equal(ops.role, "viewer");
+    assert.equal(database.authenticateUser("admin", "admin"), null);
     assert.equal(database.authenticateUser("admin", "wrong"), null);
 
     const session = database.createSession(admin.id, 60);
@@ -67,6 +82,116 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
       Object.keys(database.getAdminDashboard()).sort(),
       ["summary", "token_trend", "user_ranking"],
     );
+
+    const savedRun = database.upsertAuditRun({
+      title: "短视频质检 - 账号数 1 - 视频数 1",
+      createdBy: content.id,
+      createdByName: content.username,
+      defaultRange: { rangeType: "last7" },
+      accountTasks: [{ secUid: "sec-1", rangeType: "default" }],
+      accounts: [{ secUid: "sec-1", count: 1 }],
+      videos: [{ video_id: "video-1", desc: "直播间福利大放送" }],
+      auditResults: {
+        "video-1": {
+          video_id: "video-1",
+          audit_result: "通过",
+          need_human_review: false,
+        },
+      },
+      summary: {
+        account_count: 1,
+        video_count: 1,
+        filter_counts: { passed: 1 },
+      },
+      status: "completed",
+    });
+
+    assert.equal(savedRun.created_by, String(content.id));
+    assert.equal(savedRun.created_by_name, "content");
+    assert.equal(savedRun.video_count, 1);
+    assert.equal(savedRun.videos[0].video_id, "video-1");
+    assert.equal(
+      database.getLatestAuditRun({ createdBy: content.id }).id,
+      savedRun.id,
+    );
+    assert.equal(database.getLatestAuditRun({ createdBy: admin.id }), null);
+
+    const runList = database.listAuditRuns({
+      createdBy: content.id,
+      limit: 20,
+    });
+    assert.equal(runList.length, 1);
+    assert.equal(runList[0].created_by_name, "content");
+    assert.equal(runList[0].video_count, 1);
+    assert.equal(Object.hasOwn(runList[0], "videos"), false);
+    assert.equal(
+      database.listAuditRuns({ createdBy: admin.id, limit: 20 }).length,
+      0,
+    );
+    assert.equal(
+      database.listAuditRuns({ createdBy: admin.id, limit: 20, allUsers: true })
+        .length,
+      1,
+    );
+
+    const updatedRun = database.upsertAuditRun({
+      ...savedRun,
+      createdBy: content.id,
+      videos: [{ video_id: "video-2" }],
+      summary: { account_count: 1, video_count: 1 },
+      status: "fetched",
+    });
+    assert.equal(updatedRun.id, savedRun.id);
+    assert.equal(updatedRun.status, "fetched");
+    assert.equal(updatedRun.videos[0].video_id, "video-2");
+    assert.throws(
+      () => database.getAuditRun({ id: savedRun.id, createdBy: admin.id }),
+      /无权限查看/,
+    );
+    assert.equal(
+      database.getAuditRun({
+        id: savedRun.id,
+        createdBy: admin.id,
+        canReadAll: true,
+      }).id,
+      savedRun.id,
+    );
+    assert.throws(
+      () => database.deleteAuditRun({ id: savedRun.id, createdBy: admin.id }),
+      /无权限删除/,
+    );
+    assert.throws(
+      () =>
+        database.upsertAuditRun({
+          id: savedRun.id,
+          createdBy: admin.id,
+          title: "越权更新",
+        }),
+      /无权限修改/,
+    );
+    assert.equal(
+      database.upsertAuditRun({
+        id: savedRun.id,
+        createdBy: admin.id,
+        createdByName: admin.username,
+        title: "管理员更新",
+        canUpdateAll: true,
+      }).title,
+      "管理员更新",
+    );
+    assert.equal(
+      database.deleteAuditRun({
+        id: savedRun.id,
+        createdBy: admin.id,
+        canDeleteAll: true,
+      }),
+      true,
+    );
+    assert.equal(
+      database.getAuditRun({ id: savedRun.id, createdBy: content.id }),
+      null,
+    );
+
     assert.throws(
       () =>
         database.recordGeneration({
@@ -95,6 +220,28 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
     assert.equal(tables.includes("prompt_templates"), false);
     assert.equal(logColumns.includes("template_id"), false);
 
+    fs.rmSync(directory, { recursive: true, force: true });
+    delete process.env.SQLITE_PATH;
+    delete process.env.ADMIN_USERNAME;
+    delete process.env.ADMIN_PASSWORD;
+    delete process.env.ADMIN_NAME;
+  }
+});
+
+test("does not create a default admin when ADMIN_PASSWORD is missing", async () => {
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), "company-ai-tools-"));
+  const databasePath = path.join(directory, "test.db");
+  process.env.SQLITE_PATH = databasePath;
+  delete process.env.ADMIN_USERNAME;
+  delete process.env.ADMIN_PASSWORD;
+  delete process.env.ADMIN_NAME;
+
+  const database = await import(`./database.js?test=no-admin-${Date.now()}`);
+
+  try {
+    assert.equal(database.authenticateUser("admin", "admin"), null);
+  } finally {
+    database.closeDatabase();
     fs.rmSync(directory, { recursive: true, force: true });
     delete process.env.SQLITE_PATH;
   }

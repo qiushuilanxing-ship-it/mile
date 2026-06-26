@@ -17,40 +17,6 @@ export const tools = [
     previewLabel: "镜头结构",
   },
   {
-    id: "product_script",
-    index: "02",
-    name: "AI 产品脚本生成",
-    shortName: "产品脚本",
-    shortDescription: "把产品素材组织成短视频脚本",
-    title: "把产品素材转成完整视频脚本",
-    description:
-      "参考视频定义内容节奏，产品图片帮助 AI 识别外观，再生成完整的短视频脚本。",
-    promptPlaceholder:
-      "例如：面向 25–35 岁女性，生成一条 20 秒真人实拍产品脚本。",
-    defaultPrompt:
-      "请参考上传视频的表达节奏，为图片中的产品生成一条完整短视频脚本，包含开场钩子、逐镜头画面、口播文案和结尾行动引导。",
-    accent: "orange",
-    cover: "/tool-covers/product-script.webp",
-    previewLabel: "逐镜脚本",
-  },
-  {
-    id: "sales_copy",
-    index: "03",
-    name: "带货文案生成",
-    shortName: "带货文案",
-    shortDescription: "生成卖点清晰的口播与转化文案",
-    title: "从视频素材提炼带货表达",
-    description:
-      "AI 会参考视频的沟通方式与产品素材，输出带货口播、标题和行动引导。",
-    promptPlaceholder:
-      "例如：语气真实、不夸张，突出使用场景，同时生成 3 个标题。",
-    defaultPrompt:
-      "请参考上传视频的内容结构，为图片中的产品生成带货文案，包含开场钩子、核心卖点、场景化口播、标题和行动引导。",
-    accent: "blue",
-    cover: "/tool-covers/sales-copy.webp",
-    previewLabel: "转化口播",
-  },
-  {
     id: "benchmark_analysis",
     index: "04",
     name: "对标视频拆解",

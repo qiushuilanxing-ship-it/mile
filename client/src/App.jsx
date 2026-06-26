@@ -20,7 +20,7 @@ export default function App() {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   useEffect(() => {
-    fetch("/api/auth/me")
+    fetch("/api/me")
       .then(async (response) => {
         const payload = await response.json().catch(() => null);
         setUser(response.ok ? payload?.user ?? null : null);
@@ -30,7 +30,7 @@ export default function App() {
   }, []);
 
   async function logout() {
-    await fetch("/api/auth/logout", { method: "POST" }).catch(() => null);
+    await fetch("/api/logout", { method: "POST" }).catch(() => null);
     setUser(null);
   }
 
@@ -81,7 +81,7 @@ export default function App() {
           <Routes>
             <Route path="/" element={<HomePage />} />
             <Route path="/tools/:toolId" element={<EnginePage />} />
-            <Route path="/audit/douyin" element={<DouyinAuditPage />} />
+            <Route path="/audit/douyin" element={<DouyinAuditPage user={user} />} />
             <Route
               path="/engine"
               element={<Navigate to="/tools/video_reverse" replace />}
@@ -236,8 +236,8 @@ function EyeBall({
 
 function LoginPage({ onLogin }) {
   const [showPassword, setShowPassword] = useState(false);
-  const [username, setUsername] = useState("admin");
-  const [password, setPassword] = useState("admin");
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [isLoading, setIsLoading] = useState(false);
   const [mousePosition, setMousePosition] = useState({ x: 0, y: 0 });
@@ -344,14 +344,26 @@ function LoginPage({ onLogin }) {
 
   async function handleLogin(event) {
     event.preventDefault();
-    setIsLoading(true);
     setError("");
+    const cleanUsername = username.trim();
+
+    if (!cleanUsername) {
+      setError("请输入用户名");
+      return;
+    }
+
+    if (!password) {
+      setError("请输入密码");
+      return;
+    }
+
+    setIsLoading(true);
 
     try {
-      const response = await fetch("/api/auth/login", {
+      const response = await fetch("/api/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ username: cleanUsername, password }),
       });
       const payload = await response.json().catch(() => null);
 
@@ -373,6 +385,7 @@ function LoginPage({ onLogin }) {
   const orangePos = calculatePosition(orangeRef);
   const isPasswordVisible = password.length > 0 && showPassword;
   const isPasswordHidden = password.length > 0 && !showPassword;
+  const canSubmit = username.trim().length > 0 && password.length > 0;
 
   return (
     <div className="login-v2-page">
@@ -585,7 +598,7 @@ function LoginPage({ onLogin }) {
         <div className="login-v2-copy">
           <span className="eyebrow">INPUT TO GENERATION</span>
           <h1>欢迎回来</h1>
-          <p>上传视频、补充素材，让 AI 自动反推提示词、脚本和带货文案。</p>
+          <p>上传参考视频与素材，让 AI 自动反推可复用的视频提示词。</p>
         </div>
       </section>
 
@@ -595,7 +608,11 @@ function LoginPage({ onLogin }) {
           <strong>AI 内容引擎</strong>
         </div>
 
-        <form className="login-v2-card" onSubmit={handleLogin}>
+        <form
+          className="login-v2-card"
+          onSubmit={handleLogin}
+          autoComplete="off"
+        >
           <div className="login-v2-heading">
             <span className="card-kicker">INTERNAL LOGIN</span>
             <h2>登录内容引擎</h2>
@@ -638,14 +655,18 @@ function LoginPage({ onLogin }) {
           </label>
 
           <div className="login-v2-account-note">
-            <strong>初始账号</strong>
-            <span>admin / content / ops</span>
-            <small>初始密码与用户名相同</small>
+            <strong>内部账号登录</strong>
+            <span>请使用管理员分配的用户名和密码</span>
+            <small>如忘记密码，请联系管理员在服务器端重置。</small>
           </div>
 
           {error && <div className="error-box">{error}</div>}
 
-          <button className="login-v2-submit" type="submit" disabled={isLoading}>
+          <button
+            className="login-v2-submit"
+            type="submit"
+            disabled={isLoading || !canSubmit}
+          >
             {isLoading ? "登录中..." : "登录"}
           </button>
         </form>
@@ -675,14 +696,6 @@ function Sidebar({ user, isOpen, onLogout }) {
         <NavLink to="/tools/video_reverse">
           <SidebarIcon type="video" />
           <span>视频反推提示词</span>
-        </NavLink>
-        <NavLink to="/tools/product_script">
-          <SidebarIcon type="script" />
-          <span>AI 产品脚本</span>
-        </NavLink>
-        <NavLink to="/tools/sales_copy">
-          <SidebarIcon type="copy" />
-          <span>带货文案生成</span>
         </NavLink>
 
         <span className="sidebar-group-label">内容质检</span>
@@ -794,8 +807,6 @@ function getPageTitle(pathname) {
   if (pathname === "/dashboard") return "我的数据";
   if (pathname === "/history") return "历史记录";
   if (pathname === "/admin/dashboard") return "全局数据";
-  if (pathname.includes("product_script")) return "AI 产品脚本生成";
-  if (pathname.includes("sales_copy")) return "带货文案生成";
   if (pathname.includes("video_reverse")) return "视频反推提示词";
   return "AI 内容引擎";
 }
@@ -883,6 +894,15 @@ function PersonalDashboard() {
 
 function AdminDashboard() {
   const [dashboard, setDashboard] = useState(null);
+  const [users, setUsers] = useState([]);
+  const [userForm, setUserForm] = useState({
+    username: "",
+    name: "",
+    password: "",
+    role: "viewer",
+  });
+  const [resetPasswords, setResetPasswords] = useState({});
+  const [userMessage, setUserMessage] = useState("");
   const [error, setError] = useState("");
 
   useEffect(() => {
@@ -900,6 +920,61 @@ function AdminDashboard() {
         setError(requestError.message || "全局数据加载失败。"),
       );
   }, []);
+
+  useEffect(() => {
+    refreshUsers().catch(() => setUserMessage("用户列表加载失败。"));
+  }, []);
+
+  async function refreshUsers() {
+    const response = await fetch("/api/admin/users");
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok || payload?.success === false) {
+      throw new Error(payload?.message || "用户列表加载失败。");
+    }
+
+    setUsers(payload.users ?? []);
+  }
+
+  async function handleCreateUser(event) {
+    event.preventDefault();
+    setUserMessage("");
+    const response = await fetch("/api/admin/users", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(userForm),
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok || payload?.success === false) {
+      setUserMessage(payload?.message || "账号开通失败。");
+      return;
+    }
+
+    setUserForm({ username: "", name: "", password: "", role: "viewer" });
+    setUserMessage("账号已开通或更新。");
+    await refreshUsers();
+  }
+
+  async function handleResetPassword(user) {
+    setUserMessage("");
+    const password = resetPasswords[user.id] || "";
+    const response = await fetch(`/api/admin/users/${user.id}/password`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password, username: user.username }),
+    });
+    const payload = await response.json().catch(() => null);
+
+    if (!response.ok || payload?.success === false) {
+      setUserMessage(payload?.message || "密码重置失败。");
+      return;
+    }
+
+    setResetPasswords((current) => ({ ...current, [user.id]: "" }));
+    setUserMessage(`已重置 ${user.username} 的密码。`);
+    await refreshUsers();
+  }
 
   if (error) {
     return <PageError message={error} />;
@@ -989,6 +1064,100 @@ function AdminDashboard() {
             ))}
           </ol>
         </article>
+      </section>
+
+      <section className="data-panel admin-user-panel">
+        <div className="section-heading">
+          <div>
+            <span className="card-kicker">USER ADMIN</span>
+            <h2>账号开通与密码重置</h2>
+          </div>
+        </div>
+
+        <form className="admin-user-form" onSubmit={handleCreateUser}>
+          <label>
+            <span>用户名</span>
+            <input
+              value={userForm.username}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  username: event.target.value,
+                }))
+              }
+              placeholder="例如 content01"
+            />
+          </label>
+          <label>
+            <span>姓名</span>
+            <input
+              value={userForm.name}
+              onChange={(event) =>
+                setUserForm((current) => ({ ...current, name: event.target.value }))
+              }
+              placeholder="同事姓名"
+            />
+          </label>
+          <label>
+            <span>初始密码</span>
+            <input
+              type="password"
+              value={userForm.password}
+              onChange={(event) =>
+                setUserForm((current) => ({
+                  ...current,
+                  password: event.target.value,
+                }))
+              }
+              placeholder="至少 8 位"
+            />
+          </label>
+          <label>
+            <span>角色</span>
+            <select
+              value={userForm.role}
+              onChange={(event) =>
+                setUserForm((current) => ({ ...current, role: event.target.value }))
+              }
+            >
+              <option value="viewer">普通用户</option>
+              <option value="content">内容用户</option>
+              <option value="admin">管理员</option>
+            </select>
+          </label>
+          <button type="submit">开通 / 更新账号</button>
+        </form>
+
+        {userMessage && <div className="info-box">{userMessage}</div>}
+
+        <div className="admin-user-table">
+          {users.map((item) => (
+            <div className="admin-user-row" key={item.id}>
+              <div>
+                <strong>{item.name || item.username}</strong>
+                <span>
+                  {item.username}｜{roleLabel(item.role)}｜调用 {item.call_count} 次
+                </span>
+              </div>
+              <div className="admin-user-reset">
+                <input
+                  type="password"
+                  value={resetPasswords[item.id] || ""}
+                  onChange={(event) =>
+                    setResetPasswords((current) => ({
+                      ...current,
+                      [item.id]: event.target.value,
+                    }))
+                  }
+                  placeholder="新密码"
+                />
+                <button type="button" onClick={() => handleResetPassword(item)}>
+                  重置密码
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
       </section>
     </div>
   );
@@ -1185,8 +1354,6 @@ function formatHistoryInput(input) {
 function getToolLabel(toolType) {
   return {
     video_reverse: "视频反推提示词",
-    product_script: "AI 产品脚本",
-    sales_copy: "带货文案",
   }[toolType] ?? "AI 内容";
 }
 

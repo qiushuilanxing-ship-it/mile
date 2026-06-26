@@ -3,11 +3,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { tools } from "./tool-config.js";
 
 const quickScenes = [
-  { label: "品牌广告", toolId: "product_script", icon: "AD" },
-  { label: "好物推荐", toolId: "sales_copy", icon: "GO" },
   { label: "测评对比", toolId: "video_reverse", icon: "PK" },
-  { label: "日常 Vlog", toolId: "product_script", icon: "VG" },
-  { label: "直播带货", toolId: "sales_copy", icon: "LIVE" },
 ];
 
 export default function HomePage() {
