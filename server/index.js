@@ -6,14 +6,22 @@ import multer from "multer";
 import {
   authenticateUser,
   createSession,
+  deleteAuditRun,
   deleteSession,
   getAdminDashboard,
+  getAuditRun,
   getGenerationByRequestId,
+  getLatestAuditRun,
   getPersonalDashboard,
   getUsageStats,
   getUserBySessionToken,
+  listAuditRuns,
   listAiLogs,
+  listUsers,
   recordGeneration,
+  upsertAuditRun,
+  updateUserPassword,
+  upsertUser,
 } from "./database.js";
 import {
   finalizeGenerationResult,
@@ -147,35 +155,12 @@ app.get("/api/health", (_request, response) => {
   return sendSuccess(response, { ok: true });
 });
 
-app.post("/api/auth/login", (request, response) => {
-  const user = authenticateUser(
-    request.body?.username,
-    request.body?.password,
-  );
-
-  if (!user) {
-    return sendFailure(response, 401, "用户名或密码错误。");
-  }
-
-  const session = createSession(user.id);
-  response.setHeader(
-    "Set-Cookie",
-    buildSessionCookie(session.token, session.maxAgeSeconds),
-  );
-
-  logInfo("auth.login", { user_id: user.id, username: user.username });
-  return sendSuccess(response, { user });
-});
-
-app.post("/api/auth/logout", (request, response) => {
-  deleteSession(readCookie(request, "session_id"));
-  response.setHeader("Set-Cookie", buildSessionCookie("", 0));
-  return sendSuccess(response);
-});
-
-app.get("/api/auth/me", requireAuth, (request, response) => {
-  return sendSuccess(response, { user: request.user });
-});
+app.post("/api/login", handleLogin);
+app.post("/api/auth/login", handleLogin);
+app.post("/api/logout", handleLogout);
+app.post("/api/auth/logout", handleLogout);
+app.get("/api/me", handleMe);
+app.get("/api/auth/me", handleMe);
 
 app.use("/api", requireAuth);
 
@@ -275,6 +260,205 @@ app.get("/api/audit/account-list", (request, response) => {
     );
   }
 });
+
+app.post("/api/audit/runs", (request, response) => {
+  try {
+    const currentUser = getCurrentUser(request);
+
+    if (!currentUser) {
+      return sendFailure(
+        response,
+        401,
+        "请先登录后再保存质检记录",
+        "AUTH_REQUIRED",
+      );
+    }
+
+    const run = upsertAuditRun({
+      id: request.body?.id,
+      title: request.body?.title,
+      createdBy: currentUser.id,
+      createdByName: currentUser.name,
+      canUpdateAll: isAdmin(currentUser),
+      defaultRange: request.body?.defaultRange,
+      accountTasks: Array.isArray(request.body?.accountTasks)
+        ? request.body.accountTasks
+        : [],
+      accounts: Array.isArray(request.body?.accounts) ? request.body.accounts : [],
+      videos: Array.isArray(request.body?.videos) ? request.body.videos : [],
+      auditResults:
+        request.body?.auditResults && typeof request.body.auditResults === "object"
+          ? request.body.auditResults
+          : {},
+      summary:
+        request.body?.summary && typeof request.body.summary === "object"
+          ? request.body.summary
+          : {},
+      status: request.body?.status,
+      note: request.body?.note,
+    });
+
+    logInfo("douyin.audit_run.saved", {
+      ...requestContext(request),
+      run_id: run.id,
+      status: run.status,
+      video_count: run.video_count,
+    });
+    return sendSuccess(response, { run });
+  } catch (error) {
+    if (error.code === "AUDIT_RUN_FORBIDDEN") {
+      return sendFailure(
+        response,
+        403,
+        "无权限修改该质检记录",
+        "DOUYIN_AUDIT_RUN_FORBIDDEN",
+      );
+    }
+
+    logError("douyin.audit_run.save_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      "质检记录保存失败，请稍后重试。",
+      "DOUYIN_AUDIT_RUN_SAVE_FAILED",
+    );
+  }
+});
+
+app.get("/api/audit/runs/latest", (request, response) => {
+  try {
+    const currentUser = getCurrentUser(request);
+    const scope = resolveAuditRunScope(request, currentUser);
+    return sendSuccess(response, {
+      run: getLatestAuditRun({
+        createdBy: currentUser.id,
+        allUsers: scope === "all" && isAdmin(currentUser),
+      }),
+    });
+  } catch (error) {
+    logError("douyin.audit_run.latest_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      "最近质检记录读取失败，请稍后重试。",
+      "DOUYIN_AUDIT_RUN_LATEST_FAILED",
+    );
+  }
+});
+
+app.get("/api/audit/runs", (request, response) => {
+  try {
+    const currentUser = getCurrentUser(request);
+    const scope = resolveAuditRunScope(request, currentUser);
+    return sendSuccess(response, {
+      runs: listAuditRuns({
+        createdBy: currentUser.id,
+        limit: request.query?.limit,
+        allUsers: scope === "all" && isAdmin(currentUser),
+      }),
+      scope,
+    });
+  } catch (error) {
+    logError("douyin.audit_run.list_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      "质检历史读取失败，请稍后重试。",
+      "DOUYIN_AUDIT_RUN_LIST_FAILED",
+    );
+  }
+});
+
+app.get("/api/audit/runs/:id", (request, response) => {
+  try {
+    const currentUser = getCurrentUser(request);
+    const run = getAuditRun({
+      id: request.params.id,
+      createdBy: currentUser.id,
+      canReadAll: isAdmin(currentUser),
+    });
+
+    if (!run) {
+      return sendFailure(
+        response,
+        404,
+        "未找到该质检记录。",
+        "DOUYIN_AUDIT_RUN_NOT_FOUND",
+      );
+    }
+
+    return sendSuccess(response, { run });
+  } catch (error) {
+    if (error.code === "AUDIT_RUN_FORBIDDEN") {
+      return sendFailure(
+        response,
+        403,
+        "无权限查看或修改该历史记录。",
+        "DOUYIN_AUDIT_RUN_FORBIDDEN",
+      );
+    }
+
+    logError("douyin.audit_run.detail_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      "质检记录详情读取失败，请稍后重试。",
+      "DOUYIN_AUDIT_RUN_DETAIL_FAILED",
+    );
+  }
+});
+
+app.delete("/api/audit/runs/:id", (request, response) => {
+  try {
+    const currentUser = getCurrentUser(request);
+    const deleted = deleteAuditRun({
+      id: request.params.id,
+      createdBy: currentUser.id,
+      canDeleteAll: isAdmin(currentUser),
+    });
+
+    if (!deleted) {
+      return sendFailure(
+        response,
+        404,
+        "未找到该质检记录。",
+        "DOUYIN_AUDIT_RUN_NOT_FOUND",
+      );
+    }
+
+    logInfo("douyin.audit_run.deleted", {
+      ...requestContext(request),
+      run_id: request.params.id,
+    });
+    return sendSuccess(response);
+  } catch (error) {
+    if (error.code === "AUDIT_RUN_FORBIDDEN") {
+      return sendFailure(
+        response,
+        403,
+        "无权限查看或修改该历史记录。",
+        "DOUYIN_AUDIT_RUN_FORBIDDEN",
+      );
+    }
+
+    logError("douyin.audit_run.delete_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      500,
+      "质检记录删除失败，请稍后重试。",
+      "DOUYIN_AUDIT_RUN_DELETE_FAILED",
+    );
+  }
+});
+
+app.use("/api/audit/runs", (request, response) =>
+  sendFailure(
+    response,
+    404,
+    `历史记录接口不可用：${request.method} ${request.originalUrl} 未匹配到已注册路由，请检查后端是否已部署最新版本。`,
+    "DOUYIN_AUDIT_RUN_ROUTE_NOT_FOUND",
+  ),
+);
 
 app.post("/api/audit/douyin-account", async (request, response) => {
   const profileMap = getAccountProfileMap();
@@ -1236,6 +1420,72 @@ app.get("/api/admin/dashboard", requireAdmin, (_request, response) => {
   });
 });
 
+app.get("/api/admin/users", requireAdmin, (_request, response) => {
+  return sendSuccess(response, { users: listUsers() });
+});
+
+app.post("/api/admin/users", requireAdmin, (request, response) => {
+  const username = String(request.body?.username ?? "").trim();
+  const password = String(request.body?.password ?? "");
+  const name = String(request.body?.name ?? "").trim();
+  const role = normalizeUserRole(request.body?.role);
+
+  if (!username) {
+    return sendFailure(response, 400, "请输入用户名", "USERNAME_REQUIRED");
+  }
+
+  if (!isStrongPassword(password, username)) {
+    return sendFailure(
+      response,
+      400,
+      "密码至少 8 位，且不能等于用户名或常见弱密码。",
+      "WEAK_PASSWORD",
+    );
+  }
+
+  const user = upsertUser({
+    username,
+    password,
+    name: name || username,
+    role,
+    department: role === "admin" ? "management" : role,
+  });
+
+  logInfo("admin.user_saved", {
+    user_id: user.id,
+    username: user.username,
+    role: user.role,
+  });
+  return sendSuccess(response, { user });
+});
+
+app.patch("/api/admin/users/:id/password", requireAdmin, (request, response) => {
+  const password = String(request.body?.password ?? "");
+  const username = String(request.body?.username ?? "");
+
+  if (!isStrongPassword(password, username)) {
+    return sendFailure(
+      response,
+      400,
+      "密码至少 8 位，且不能等于用户名或常见弱密码。",
+      "WEAK_PASSWORD",
+    );
+  }
+
+  const user = updateUserPassword({ id: request.params.id, password });
+
+  if (!user) {
+    return sendFailure(response, 404, "用户不存在", "USER_NOT_FOUND");
+  }
+
+  logInfo("admin.user_password_reset", {
+    target_user_id: user.id,
+    target_username: user.username,
+    operator_id: request.user.id,
+  });
+  return sendSuccess(response, { user });
+});
+
 app.post(
   "/api/generate",
   guardGenerationRequest,
@@ -1403,6 +1653,50 @@ app.post(
   },
 );
 
+function handleLogin(request, response) {
+  const username = String(request.body?.username ?? "").trim();
+  const password = String(request.body?.password ?? "");
+
+  if (!username) {
+    return sendFailure(response, 400, "请输入用户名", "USERNAME_REQUIRED");
+  }
+
+  if (!password) {
+    return sendFailure(response, 400, "请输入密码", "PASSWORD_REQUIRED");
+  }
+
+  const user = authenticateUser(username, password);
+
+  if (!user) {
+    return sendFailure(response, 401, "账号或密码错误", "AUTH_INVALID");
+  }
+
+  const session = createSession(user.id);
+  response.setHeader(
+    "Set-Cookie",
+    buildSessionCookie(session.token, session.maxAgeSeconds),
+  );
+
+  logInfo("auth.login", { user_id: user.id, username: user.username });
+  return sendSuccess(response, { user });
+}
+
+function handleLogout(request, response) {
+  deleteSession(readCookie(request, "session_id"));
+  response.setHeader("Set-Cookie", buildSessionCookie("", 0));
+  return sendSuccess(response);
+}
+
+function handleMe(request, response) {
+  const user = getUserBySessionToken(readCookie(request, "session_id"));
+
+  if (!user) {
+    return sendFailure(response, 401, "未登录", "AUTH_REQUIRED");
+  }
+
+  return sendSuccess(response, { user });
+}
+
 function requireAuth(request, response, next) {
   const token = readCookie(request, "session_id");
   const user = getUserBySessionToken(token);
@@ -1416,11 +1710,53 @@ function requireAuth(request, response, next) {
 }
 
 function requireAdmin(request, response, next) {
-  if (request.user.role !== "admin") {
+  if (!isAdmin(request.user)) {
     return sendFailure(response, 403, "仅管理员可以查看运营数据。");
   }
 
   return next();
+}
+
+function getCurrentUser(request) {
+  if (!request.user) return null;
+
+  return {
+    id: String(request.user.id),
+    username: request.user.username,
+    name: request.user.name || request.user.displayName || request.user.username,
+    role: request.user.role,
+  };
+}
+
+function isAdmin(user) {
+  return user?.role === "admin" || user?.username === "admin";
+}
+
+function normalizeUserRole(value) {
+  return value === "admin" ? "admin" : value === "content" ? "content" : "viewer";
+}
+
+function isStrongPassword(password, username = "") {
+  const value = String(password ?? "");
+  const normalized = value.toLowerCase();
+  const weakPasswords = new Set([
+    "123456",
+    "12345678",
+    "password",
+    "admin",
+    "admin123",
+    "qwerty123",
+  ]);
+
+  return (
+    value.length >= 8 &&
+    normalized !== String(username ?? "").trim().toLowerCase() &&
+    !weakPasswords.has(normalized)
+  );
+}
+
+function resolveAuditRunScope(request, user) {
+  return isAdmin(user) && request.query?.scope === "all" ? "all" : "mine";
 }
 
 function enforceDailyLimit(request, response, next) {

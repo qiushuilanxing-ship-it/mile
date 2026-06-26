@@ -18,13 +18,13 @@ const VIDEO_MARKERS = [
 
 const PRICE_ACTIVITY_GUIDANCE = `价格/活动类内容判定尺度：
 1. 直播间价格、到手价、国补、福利、活动价、惊喜福利、下单福利、优惠活动等表述，本身不等于违规。
-2. 如果内容只是引导用户到直播间查看活动，例如“直播间福利大放送”“直播间国补到手4419”“下单还有惊喜福利”“价格4XXX”“到手价很香”“进直播间看看”，默认判定为“通过”或“低风险通过”，need_human_review 必须为 false。
+2. 如果内容只是引导用户到直播间查看活动，例如“直播间福利大放送”“直播间国补到手4419”“下单还有惊喜福利”“价格4XXX”“到手价很香”“进直播间看看”，默认判定为“通过”，risk_level 必须为“无”，need_human_review 必须为 false。
 3. 常规价格/福利表达可以在 rectification_suggestion 中轻微提示“发布前由运营确认活动价格与后台一致即可”，但不要因此输出“建议人工复核”。
 4. 只有出现明确但不完整且容易误导消费者的强价格承诺，才标记“建议人工复核”：例如具体到手价但商品型号、规格、活动条件完全无法判断；多个价格前后冲突；标题价格与画面价格明显不一致；赠品、满减、分期、国补条件明显缺失且影响决策。
 5. 只有出现需要后台确认的具体强承诺时，才标记“建议人工复核”：例如限量多少台、库存保证、保价、赠品必送、补贴资格承诺、售后承诺。
 6. 如果价格信息与商品型号明显不匹配，或出现“仅限今天”“最后一波”“错过不再有”等强时效承诺且没有任何活动条件说明，标记“建议人工复核”。
-7. 只有出现明确违规证据时才判“需整改”：全网最低、全年最低、最低价、第一、最强、绝对、永久、100%有效、买了必赚、闭眼买、不买后悔一辈子、官方最低、全平台最低、加微信、私信下单、进群领取、站外购买、绕开平台、明显欺骗或虚假宣传。
-8. 如果只是常规价格/福利表达，没有明确违规证据，请输出：audit_result 为“通过”，risk_level 为“无”或“低”，main_risks 和 hit_rules 为空数组，need_human_review 为 false；evidence 说明未发现极限词、站外导流、明显虚假宣传或价格冲突；visual_evidence 可说明画面展示直播间活动价格或福利信息，属于常规活动引导；rectification_suggestion 写“无需整改，发布前由运营确认活动价格与后台一致即可”。`;
+7. 发现明确违规证据时也统一输出“建议人工复核”，不要输出“需整改”或“高风险退回”：例如全网最低、全年最低、最低价、第一、最强、绝对、永久、100%有效、买了必赚、闭眼买、不买后悔一辈子、官方最低、全平台最低、加微信、私信下单、进群领取、站外购买、绕开平台、明显欺骗或虚假宣传。
+8. 如果只是常规价格/福利表达，没有明确违规证据，请输出：audit_result 为“通过”，risk_level 为“无”，main_risks 和 hit_rules 为空数组，problem_description 为“未发现明显违规风险”，need_human_review 为 false；evidence 说明未发现极限词、站外导流、明显虚假宣传或价格冲突；visual_evidence 可说明画面展示直播间活动价格或福利信息，属于常规活动引导；rectification_suggestion 写“无需整改，发布前由运营确认活动价格、国补政策与后台一致即可”。`;
 
 const VISION_SYSTEM_PROMPT = `你是“米乐科技短视频视觉质检员”，负责根据米乐科技短视频质检规范，对抖音短视频进行合规初审。
 
@@ -451,11 +451,12 @@ ${clean(video?.desc) || "（无标题描述）"}
 请结合视频画面、字幕、贴片、商品展示、标题描述和命中规则进行合规初审。
 请重点判断是否存在虚假宣传、极限词、价格活动风险、商品信息错误、诱导第三方交易、水印侵权、低俗暴力、AI内容未标注等问题。
 特别注意：国补、到手价、直播间福利、惊喜福利、下单福利、价格 4XXX、618/促销/活动价等常规电商活动表达，本身不等于违规。没有极限词、站外导流、价格冲突、强承诺或明显规则缺失时，应判“通过”，need_human_review=false。
-示例：画面“RedMi X85 2026 直播间国补到手4419”，标题“现在下单还有惊喜福利，快来看看吧”，应判“通过”，risk_level 为“无”或“低”，need_human_review=false，建议写“无需整改，发布前由运营确认活动价格与后台一致即可”。
+示例：画面“RedMi X85 2026 直播间国补到手4419”，标题“现在下单还有惊喜福利，快来看看吧”，应判“通过”，risk_level 为“无”，problem_description 为“未发现明显违规风险”，need_human_review=false，建议写“无需整改，发布前由运营确认活动价格、国补政策与后台一致即可”。
+如果发现明显违规、价格冲突、站外导流、极限词、虚假宣传、规则明显缺失等问题，统一输出 audit_result 为“建议人工复核”，need_human_review=true；不要输出“需整改”或“高风险退回”。
 请只输出严格 JSON。
 
 输出字段：
-{"video_id":"","audit_result":"通过/需整改/高风险退回/建议人工复核","risk_level":"无/低/中/高","main_risks":[],"hit_rules":[],"evidence":"","visual_evidence":"","problem_description":"","rectification_suggestion":"","need_human_review":true,"audit_mode":"video"}`;
+{"video_id":"","audit_result":"通过/建议人工复核","risk_level":"无/低/中/高","main_risks":[],"hit_rules":[],"evidence":"","visual_evidence":"","problem_description":"","rectification_suggestion":"","need_human_review":true,"audit_mode":"video"}`;
 }
 
 export function buildTextAuditPrompt(video, matchedRules) {
@@ -477,10 +478,10 @@ ${clean(video?.desc) || "（无标题描述）"}
 命中规则：${JSON.stringify(Array.isArray(matchedRules) ? matchedRules : [])}
 
 仅根据标题描述和候选规则判断。没有明确风险时输出“通过”；不要因为出现国补、到手价、直播间福利、惊喜福利、下单福利、价格 4XXX、618/促销/活动价等常规电商活动表达，就自动输出“建议人工复核”。
-只有出现明确价格冲突、强价格承诺、强时效承诺、站外导流、极限词、明显虚假宣传或严重规则缺失时，才输出“建议人工复核”或“需整改”。
-示例：标题包含“直播间国补到手4419”“下单还有惊喜福利”“进直播间看看”，若没有其他违规证据，应判“通过”，need_human_review=false。
+只有出现明确价格冲突、强价格承诺、强时效承诺、站外导流、极限词、明显虚假宣传或严重规则缺失时，才输出“建议人工复核”，不要输出“需整改”或“高风险退回”。
+示例：标题包含“直播间国补到手4419”“下单还有惊喜福利”“进直播间看看”，若没有其他违规证据，应判“通过”，risk_level 必须为“无”，need_human_review=false。
 只输出严格 JSON：
-{"video_id":"","audit_result":"通过/需整改/高风险退回/建议人工复核","risk_level":"无/低/中/高","main_risks":[],"hit_rules":[],"evidence":"","visual_evidence":"","problem_description":"","rectification_suggestion":"","need_human_review":true,"audit_mode":"text"}`;
+{"video_id":"","audit_result":"通过/建议人工复核","risk_level":"无/低/中/高","main_risks":[],"hit_rules":[],"evidence":"","visual_evidence":"","problem_description":"","rectification_suggestion":"","need_human_review":true,"audit_mode":"text"}`;
 }
 
 export const buildAuditPrompt = buildTextAuditPrompt;

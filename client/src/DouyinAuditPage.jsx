@@ -1,4 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
+import {
+  getDisplayAuditStatus,
+  getFilterCounts,
+  matchesFilter,
+} from "./douyinAuditStatus.js";
 
 const rangeOptions = [
   { value: "last3", label: "最近 3 天", days: 3 },
@@ -9,15 +14,13 @@ const rangeOptions = [
 const filterOptions = [
   { value: "all", label: "全部" },
   { value: "human", label: "人工审核" },
-  { value: "fix", label: "需整改" },
-  { value: "high", label: "高风险" },
   { value: "passed", label: "已通过" },
   { value: "failed", label: "失败" },
 ];
 const SHOW_AUDIT_DEBUG = import.meta.env.DEV;
 const AUDIT_BATCH_SIZE = 2;
 
-export default function DouyinAuditPage() {
+export default function DouyinAuditPage({ user }) {
   const initialRange = getClientRange("last7");
   const [secUidInput, setSecUidInput] = useState("");
   const [rangeType, setRangeType] = useState("last7");
@@ -44,12 +47,20 @@ export default function DouyinAuditPage() {
   const [unmatchedOnly, setUnmatchedOnly] = useState(false);
   const [sortMode, setSortMode] = useState("time");
   const [isAuditing, setIsAuditing] = useState(false);
-  const [testFirstThree, setTestFirstThree] = useState(true);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
   const [auditError, setAuditError] = useState("");
   const [copyMessage, setCopyMessage] = useState("");
   const [hasSearched, setHasSearched] = useState(false);
+  const [currentRunId, setCurrentRunId] = useState(null);
+  const [historyRuns, setHistoryRuns] = useState([]);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
+  const [isRestoringRun, setIsRestoringRun] = useState(false);
+  const [isRunSaving, setIsRunSaving] = useState(false);
+  const [runMessage, setRunMessage] = useState("");
+  const [runError, setRunError] = useState("");
+  const [historyScope, setHistoryScope] = useState("mine");
+  const canViewAllAuditRuns = user?.role === "admin" || user?.username === "admin";
 
   const recognizedSecUids = useMemo(
     () => parseSecUids(secUidInput),
@@ -78,6 +89,8 @@ export default function DouyinAuditPage() {
 
   useEffect(() => {
     loadAccountProfiles();
+    loadLatestAuditRun();
+    loadHistoryRuns();
   }, []);
 
   useEffect(() => {
@@ -204,6 +217,211 @@ export default function DouyinAuditPage() {
     } catch (requestError) {
       setProfileError(requestError.message || "账号资料库读取失败。");
     }
+  }
+
+  async function loadLatestAuditRun() {
+    setIsRestoringRun(true);
+    try {
+      const response = await fetch("/api/audit/runs/latest?scope=mine");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(getAuditRunApiError(response, payload, "最近质检记录读取失败。"));
+      }
+
+      if (payload?.run) {
+        restoreAuditRun(payload.run, { auto: true });
+      }
+    } catch (requestError) {
+      setRunError(requestError.message || "最近质检记录读取失败。");
+    } finally {
+      setIsRestoringRun(false);
+    }
+  }
+
+  async function loadHistoryRuns(scope = historyScope) {
+    const safeScope = canViewAllAuditRuns && scope === "all" ? "all" : "mine";
+    try {
+      const response = await fetch(
+        `/api/audit/runs?scope=${safeScope}&limit=20`,
+      );
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(getAuditRunApiError(response, payload, "质检历史读取失败。"));
+      }
+      setHistoryRuns(Array.isArray(payload?.runs) ? payload.runs : []);
+    } catch (requestError) {
+      setRunError(requestError.message || "质检历史读取失败。");
+    }
+  }
+
+  function restoreAuditRun(run, { auto = false } = {}) {
+    const defaultRange = normalizeRestoredRange(run.defaultRange);
+    const restoredTasks = normalizeRestoredTasks(run.accountTasks);
+    const restoredAccounts = Array.isArray(run.accounts) ? run.accounts : [];
+    const restoredVideos = Array.isArray(run.videos) ? run.videos : [];
+    const restoredResults = normalizeAuditResultsMap(run.auditResults);
+    const restoredSummary = run.summary?.auditSummary ?? null;
+
+    setCurrentRunId(run.id ?? null);
+    setRangeType(defaultRange.rangeType);
+    setStartDate(defaultRange.startDate);
+    setEndDate(defaultRange.endDate);
+    setSecUidInput(restoredTasks.map((task) => task.secUid).filter(Boolean).join("\n"));
+    setAccountTasks(restoredTasks);
+    setAccounts(restoredAccounts);
+    setVideos(restoredVideos);
+    setAuditResults(restoredResults);
+    setAuditSummary(restoredSummary);
+    setResultRange(run.summary?.resultRange ?? defaultRange);
+    setTotalFetched(Number(run.summary?.totalFetched) || restoredVideos.length);
+    setResponseMessage("");
+    setError("");
+    setAuditError("");
+    setActiveFilter("all");
+    setSelectedAccount("all");
+    setUnmatchedOnly(false);
+    setHasSearched(restoredVideos.length > 0 || restoredAccounts.length > 0);
+    setRunError("");
+    setRunMessage(
+      auto
+        ? `已自动恢复最近一次质检记录：${run.title}`
+        : "已恢复历史质检记录。",
+    );
+
+    if (!auto) {
+      setTimeout(() => {
+        document.querySelector(".douyin-workbench")?.scrollIntoView({
+          behavior: "smooth",
+          block: "start",
+        });
+      }, 120);
+    }
+  }
+
+  async function restoreHistoryRun(runId) {
+    setIsRestoringRun(true);
+    try {
+      const response = await fetch(`/api/audit/runs/${encodeURIComponent(runId)}`);
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(getAuditRunApiError(response, payload, "质检记录恢复失败。"));
+      }
+      restoreAuditRun(payload.run);
+      setIsHistoryOpen(false);
+    } catch (requestError) {
+      setRunError(requestError.message || "质检记录恢复失败。");
+    } finally {
+      setIsRestoringRun(false);
+    }
+  }
+
+  async function deleteHistoryRun(runId) {
+    if (!window.confirm("确定删除这条质检记录吗？删除后不可恢复。")) return;
+
+    try {
+      const response = await fetch(`/api/audit/runs/${encodeURIComponent(runId)}`, {
+        method: "DELETE",
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(getAuditRunApiError(response, payload, "质检记录删除失败。"));
+      }
+      if (currentRunId === runId) {
+        setCurrentRunId(null);
+      }
+      setHistoryRuns((runs) => runs.filter((run) => run.id !== runId));
+      setRunMessage("质检记录已删除。");
+    } catch (requestError) {
+      setRunError(requestError.message || "质检记录删除失败。");
+    }
+  }
+
+  async function saveAuditRun(status = "fetched", overrides = {}) {
+    const nextVideos = overrides.videos ?? videos;
+    const nextAccounts = overrides.accounts ?? accounts;
+    const nextAuditResults = overrides.auditResults ?? auditResults;
+    const nextAuditSummary =
+      Object.hasOwn(overrides, "auditSummary")
+        ? overrides.auditSummary
+        : auditSummary;
+    const nextDefaultRange =
+      overrides.defaultRange ?? { rangeType, startDate, endDate };
+    const nextAccountTasks = overrides.accountTasks ?? accountTasks;
+
+    if (
+      !overrides.force &&
+      nextVideos.length === 0 &&
+      Object.keys(nextAuditResults).length === 0
+    ) {
+      setRunError("当前还没有可保存的质检数据。");
+      return null;
+    }
+
+    setIsRunSaving(true);
+    setRunError("");
+    try {
+      const response = await fetch("/api/audit/runs", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: overrides.id ?? currentRunId,
+          title:
+            overrides.title ??
+            buildAuditRunTitle(nextAccounts.length, nextVideos.length),
+          defaultRange: nextDefaultRange,
+          accountTasks: nextAccountTasks,
+          accounts: nextAccounts,
+          videos: nextVideos,
+          auditResults: nextAuditResults,
+          summary: buildPersistedRunSummary({
+            accounts: nextAccounts,
+            videos: nextVideos,
+            auditResults: nextAuditResults,
+            auditSummary: nextAuditSummary,
+            resultRange: overrides.resultRange ?? resultRange ?? nextDefaultRange,
+            totalFetched: overrides.totalFetched ?? totalFetched,
+          }),
+          status,
+          note: overrides.note ?? "",
+        }),
+      });
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(getAuditRunApiError(response, payload, "质检记录保存失败。"));
+      }
+      setCurrentRunId(payload.run.id);
+      setRunMessage(overrides.message ?? "当前质检记录已保存。");
+      await loadHistoryRuns();
+      return payload.run;
+    } catch (requestError) {
+      setRunError(requestError.message || "质检记录保存失败。");
+      return null;
+    } finally {
+      setIsRunSaving(false);
+    }
+  }
+
+  function clearCurrentPage() {
+    setCurrentRunId(null);
+    setSecUidInput("");
+    setAccountTasks([]);
+    setAccounts([]);
+    setVideos([]);
+    setResultRange(null);
+    setTotalFetched(0);
+    setResponseMessage("");
+    setAuditResults({});
+    setAuditSummary(null);
+    setAuditProgress(null);
+    setActiveFilter("all");
+    setSelectedAccount("all");
+    setUnmatchedOnly(false);
+    setSortMode("time");
+    setError("");
+    setAuditError("");
+    setRunError("");
+    setRunMessage("当前页面已清空，历史记录不会被删除。");
+    setHasSearched(false);
   }
 
   async function handleAccountListUpload() {
@@ -362,10 +580,14 @@ export default function DouyinAuditPage() {
         throw new Error(payload?.message || "视频数据获取失败，请稍后重试。");
       }
 
-      setVideos(Array.isArray(payload?.videos) ? payload.videos : []);
-      setAccounts(Array.isArray(payload?.accounts) ? payload.accounts : []);
-      setResultRange(payload?.defaultRange ?? requestedRange);
-      setTotalFetched(Number(payload?.totalFetched) || 0);
+      const nextVideos = Array.isArray(payload?.videos) ? payload.videos : [];
+      const nextAccounts = Array.isArray(payload?.accounts) ? payload.accounts : [];
+      const nextResultRange = payload?.defaultRange ?? requestedRange;
+      const nextTotalFetched = Number(payload?.totalFetched) || 0;
+      setVideos(nextVideos);
+      setAccounts(nextAccounts);
+      setResultRange(nextResultRange);
+      setTotalFetched(nextTotalFetched);
       setResponseMessage(payload?.message || "");
       const accountsBySecUid = new Map(
         (payload?.accounts ?? []).map((account) => [
@@ -390,6 +612,30 @@ export default function DouyinAuditPage() {
           };
         }),
       );
+      const nextAccountTasks = accountTasks.map((task) => {
+        const account = accountsBySecUid.get(normalizeClientSecUid(task.secUid));
+        return {
+          ...task,
+          ...(account ? getProfileTaskFields(account) : {}),
+          status: account?.status ?? "failed",
+          message:
+            account?.message ||
+            (account
+              ? ""
+              : "后端未返回该账号结果，请检查 secUid 是否包含异常字符"),
+        };
+      });
+      await saveAuditRun("fetched", {
+        defaultRange: nextResultRange,
+        accountTasks: nextAccountTasks,
+        accounts: nextAccounts,
+        videos: nextVideos,
+        auditResults: {},
+        auditSummary: null,
+        resultRange: nextResultRange,
+        totalFetched: nextTotalFetched,
+        message: "账号作品已获取并保存为质检记录。",
+      });
     } catch (requestError) {
       setError(requestError.message || "视频数据获取失败，请稍后重试。");
       setAccountTasks((tasks) =>
@@ -407,10 +653,7 @@ export default function DouyinAuditPage() {
   async function handleAiAudit() {
     if (visibleVideos.length === 0 || isAuditing) return;
 
-    const selectedVideos = testFirstThree
-      ? visibleVideos.slice(0, 3)
-      : visibleVideos;
-    const auditVideos = selectedVideos.map(
+    const auditVideos = visibleVideos.map(
       ({ auditResult: _auditResult, ...video }) => video,
     );
     const totalBatches = Math.ceil(auditVideos.length / AUDIT_BATCH_SIZE);
@@ -425,12 +668,19 @@ export default function DouyinAuditPage() {
       totalBatches,
     });
 
-    try {
-      const allResults = [];
-      let localMatchedCount = 0;
-      let visionCount = 0;
-      let textFallbackCount = 0;
+    await saveAuditRun("auditing", {
+      auditResults: {},
+      auditSummary: null,
+      message: "AI 质检已开始，当前记录已更新。",
+      note: "AI 质检中",
+    });
 
+    const allResults = [];
+    let localMatchedCount = 0;
+    let visionCount = 0;
+    let textFallbackCount = 0;
+
+    try {
       for (let index = 0; index < auditVideos.length; index += AUDIT_BATCH_SIZE) {
         const currentBatch = Math.floor(index / AUDIT_BATCH_SIZE) + 1;
         const batch = auditVideos.slice(index, index + AUDIT_BATCH_SIZE);
@@ -443,10 +693,7 @@ export default function DouyinAuditPage() {
         const response = await fetch("/api/audit/douyin-videos", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            videos: batch,
-            testLimit: testFirstThree ? 3 : undefined,
-          }),
+          body: JSON.stringify({ videos: batch }),
         });
         const payload = await response.json().catch(() => null);
 
@@ -481,20 +728,50 @@ export default function DouyinAuditPage() {
         });
       }
 
-      setAuditSummary({
+      const nextAuditSummary = {
         ...getAuditSummary(allResults),
         localMatchedCount,
         visionCount,
         textFallbackCount,
-      });
+      };
+      const nextAuditResults = Object.fromEntries(
+        allResults
+          .filter((result) => result?.video_id)
+          .map((result) => [result.video_id, result]),
+      );
+      setAuditSummary(nextAuditSummary);
       setAuditProgress({
         completed: allResults.length,
         total: auditVideos.length,
         currentBatch: totalBatches,
         totalBatches,
       });
+      await saveAuditRun("completed", {
+        auditResults: nextAuditResults,
+        auditSummary: nextAuditSummary,
+        message: "AI 质检结果已保存。",
+      });
     } catch (requestError) {
-      setAuditError(requestError.message || "AI 质检失败，请稍后重试。");
+      const message = requestError.message || "AI 质检失败，请稍后重试。";
+      setAuditError(message);
+      await saveAuditRun("failed", {
+        auditResults: Object.fromEntries(
+          allResults
+            .filter((result) => result?.video_id)
+            .map((result) => [result.video_id, result]),
+        ),
+        auditSummary:
+          allResults.length > 0
+            ? {
+                ...getAuditSummary(allResults),
+                localMatchedCount,
+                visionCount,
+                textFallbackCount,
+              }
+            : null,
+        note: message,
+        message: "AI 质检失败，已保存当前进度。",
+      });
     } finally {
       setIsAuditing(false);
     }
@@ -512,13 +789,13 @@ export default function DouyinAuditPage() {
         "secUid",
         "发布时间",
         "视频链接",
-        "质检结论",
-        "风险等级",
-        "主要风险",
-        "命中规则",
+        "审核结论",
+        "是否人工审核",
+        "主要问题",
         "证据摘要",
-        "整改建议",
-        "是否人工复核",
+        "审核建议",
+        "原始模型结论",
+        "原始风险等级",
         "质检模式",
       ],
       ...visibleVideos.map(({ auditResult, ...video }) => [
@@ -529,13 +806,15 @@ export default function DouyinAuditPage() {
         video.secUid,
         video.create_time,
         video.page_url,
-        auditResult?.audit_result || "未质检",
-        auditResult?.risk_level || "",
-        joinValues(auditResult?.main_risks),
-        joinValues(auditResult?.hit_rules),
+        getDisplayAuditStatus(auditResult).label,
+        getDisplayAuditStatus(auditResult).key === "human" ? "是" : "否",
+        joinValues(auditResult?.main_risks) ||
+          auditResult?.problem_description ||
+          "",
         buildEvidenceSummary(auditResult),
         auditResult?.rectification_suggestion || "",
-        auditResult?.need_human_review ? "是" : "否",
+        auditResult?.audit_result || "未质检",
+        auditResult?.risk_level || "",
         getAuditModeLabel(auditResult?.audit_mode),
       ]),
     ];
@@ -558,9 +837,9 @@ export default function DouyinAuditPage() {
         [
           `${index + 1}. ${video.frontend_name || video.author_name || "未知账号"}｜${video.create_time}`,
           `视频：${video.page_url}`,
-          `结论：${auditResult?.audit_result || "未质检"}｜风险：${auditResult?.risk_level || "-"}`,
+          `结论：${getDisplayAuditStatus(auditResult).label}`,
           `主要风险：${joinValues(auditResult?.main_risks) || "无"}`,
-          `整改建议：${auditResult?.rectification_suggestion || "无"}`,
+          `审核建议：${auditResult?.rectification_suggestion || "无"}`,
         ].join("\n"),
       )
       .join("\n\n");
@@ -582,9 +861,7 @@ export default function DouyinAuditPage() {
       .length,
     videos: videos.length,
     passed: filterCounts.passed,
-    fix: filterCounts.fix,
     human: filterCounts.human,
-    high: filterCounts.high,
     failed: filterCounts.failed,
   };
 
@@ -594,7 +871,50 @@ export default function DouyinAuditPage() {
         <span className="eyebrow">DOUYIN QUALITY WORKSPACE</span>
         <h1>抖音短视频质检</h1>
         <p>支持多账号、日期筛选、AI 视觉质检和人工复核筛选。</p>
+        <div className="douyin-run-actions">
+          <button
+            type="button"
+            onClick={() => {
+              setIsHistoryOpen(true);
+              loadHistoryRuns(historyScope);
+            }}
+          >
+            查看历史记录
+          </button>
+          <button
+            type="button"
+            onClick={() =>
+              saveAuditRun(
+                Object.keys(auditResults).length > 0 ? "completed" : "fetched",
+                { message: "当前质检记录已保存。" },
+              )
+            }
+            disabled={isRunSaving || (videos.length === 0 && Object.keys(auditResults).length === 0)}
+          >
+            {isRunSaving ? "保存中..." : "保存当前记录"}
+          </button>
+          <button type="button" className="danger" onClick={clearCurrentPage}>
+            清空当前页面
+          </button>
+        </div>
       </header>
+
+      {runMessage && (
+        <div className="douyin-run-message success">
+          <strong>{runMessage}</strong>
+          <span>你可以继续 AI 质检、导出结果，或清空后重新开始。</span>
+        </div>
+      )}
+      {runError && (
+        <div className="douyin-run-message error">
+          <strong>{runError}</strong>
+        </div>
+      )}
+      {isRestoringRun && (
+        <div className="douyin-run-message neutral">
+          <strong>正在读取质检记录...</strong>
+        </div>
+      )}
 
       <form className="douyin-audit-form douyin-query-card" onSubmit={handleSubmit}>
         <div className="douyin-query-intro">
@@ -924,20 +1244,6 @@ export default function DouyinAuditPage() {
               {isAuditing ? "AI 质检中..." : "开始 AI 质检"}
             </button>
           </div>
-          <div className="douyin-audit-test-control">
-            <label>
-              <input
-                type="checkbox"
-                checked={testFirstThree}
-                onChange={(event) => setTestFirstThree(event.target.checked)}
-                disabled={isAuditing}
-              />
-              仅测试前 3 条
-            </label>
-            <p>
-              视频视觉质检耗时较长，建议先测试前3条，确认模型正常后再批量质检。
-            </p>
-          </div>
         </div>
       </form>
 
@@ -972,9 +1278,8 @@ export default function DouyinAuditPage() {
             />
             <OverviewCard label="视频总数" value={overview.videos} />
             <OverviewCard label="已通过" value={overview.passed} tone="passed" />
-            <OverviewCard label="需整改" value={overview.fix} tone="fix" />
             <OverviewCard label="人工审核" value={overview.human} tone="human" />
-            <OverviewCard label="高风险" value={overview.high} tone="high" />
+            <OverviewCard label="失败" value={overview.failed} tone="failed" />
           </div>
           {accounts.length > 0 && (
             <div className="douyin-account-strip">
@@ -1106,6 +1411,9 @@ export default function DouyinAuditPage() {
 
           {auditSummary && (
             <div className="douyin-audit-summary">
+              <span>通过 {auditSummary.passed ?? 0} 条</span>
+              <span>人工审核 {auditSummary.humanReview ?? 0} 条</span>
+              <span>失败 {auditSummary.failed ?? 0} 条</span>
               <span>视觉质检 {auditSummary.visionCount} 条</span>
               <span>文本降级 {auditSummary.textFallbackCount} 条</span>
               <span>本地规则命中 {auditSummary.localMatchedCount} 条</span>
@@ -1147,8 +1455,102 @@ export default function DouyinAuditPage() {
           <p>
             {hasSearched
               ? responseMessage || "该时间范围内未获取到视频。"
-              : "输入一个或多个 secUid，选择日期范围后开始获取。"}
+            : "输入一个或多个 secUid，选择日期范围后开始获取。"}
           </p>
+        </div>
+      )}
+
+      {isHistoryOpen && (
+        <div className="douyin-history-drawer" role="dialog" aria-modal="true">
+          <button
+            className="douyin-history-backdrop"
+            type="button"
+            aria-label="关闭历史记录"
+            onClick={() => setIsHistoryOpen(false)}
+          />
+          <aside className="douyin-history-panel">
+            <header>
+              <div>
+                <span className="card-kicker">AUDIT RUN HISTORY</span>
+                <h2>质检历史记录</h2>
+                <p>可恢复之前的账号任务、视频列表和 AI 质检结果。</p>
+              </div>
+              <button type="button" onClick={() => setIsHistoryOpen(false)}>
+                关闭
+              </button>
+            </header>
+
+            <div className="douyin-history-scope">
+              <button
+                type="button"
+                className={historyScope === "mine" ? "active" : ""}
+                onClick={() => {
+                  setHistoryScope("mine");
+                  loadHistoryRuns("mine");
+                }}
+              >
+                我的记录
+              </button>
+              {canViewAllAuditRuns && (
+                <button
+                  type="button"
+                  className={historyScope === "all" ? "active" : ""}
+                  onClick={() => {
+                    setHistoryScope("all");
+                    loadHistoryRuns("all");
+                  }}
+                >
+                  全部记录
+                </button>
+              )}
+            </div>
+
+            {historyRuns.length === 0 ? (
+              <div className="douyin-history-empty">
+                还没有保存过质检记录。获取账号作品后会自动保存。
+              </div>
+            ) : (
+              <div className="douyin-history-list">
+                {historyRuns.map((run) => (
+                  <article className="douyin-history-run" key={run.id}>
+                    <div>
+                      <strong>{run.title}</strong>
+                      <span>
+                        创建：{formatRunTime(run.created_at)}｜更新：{formatRunTime(run.updated_at)}
+                      </span>
+                      <span>创建人：{run.created_by_name || "未知创建人"}</span>
+                    </div>
+                    <div className="douyin-history-meta">
+                      <span className={`status ${run.status}`}>
+                        {getRunStatusLabel(run.status)}
+                      </span>
+                      <span>账号 {run.account_count}</span>
+                      <span>视频 {run.video_count}</span>
+                      <span>人工 {getRunSummaryCounts(run.summary).humanReview}</span>
+                      <span>通过 {getRunSummaryCounts(run.summary).passed}</span>
+                      <span>失败 {getRunSummaryCounts(run.summary).failed}</span>
+                    </div>
+                    <div className="douyin-history-actions">
+                      <button
+                        type="button"
+                        onClick={() => restoreHistoryRun(run.id)}
+                        disabled={isRestoringRun}
+                      >
+                        恢复
+                      </button>
+                      <button
+                        type="button"
+                        className="danger"
+                        onClick={() => deleteHistoryRun(run.id)}
+                      >
+                        删除
+                      </button>
+                    </div>
+                  </article>
+                ))}
+              </div>
+            )}
+          </aside>
         </div>
       )}
     </div>
@@ -1252,25 +1654,32 @@ function AuditResultPanel({ result, isAuditing }) {
 
   const mainRisks = Array.isArray(result.main_risks) ? result.main_risks : [];
   const hitRules = Array.isArray(result.hit_rules) ? result.hit_rules : [];
-  const tone = getAuditTone(result);
-  const conclusion = getAuditConclusion(result);
+  const displayStatus = getDisplayAuditStatus(result);
+  const tone = displayStatus.tone;
+  const conclusion = displayStatus.label;
+  const isClearPass =
+    displayStatus.key === "passed" &&
+    result.need_human_review === false &&
+    ["无", "低", "", undefined, null].includes(result.risk_level);
   const primaryProblem =
-    result.audit_result === "通过"
-      ? "未发现明显风险，可正常发布。"
+    isClearPass
+      ? "无明显风险，可正常发布。"
       : result.audit_status === "timeout"
-        ? "该视频质检超时，建议人工复核。"
+        ? "该视频质检超时，建议人工审核。"
         : summarizeText(
             result.problem_description || mainRisks.join("；"),
             80,
-            "建议人工复核该视频内容。",
+            "建议人工审核该视频内容。",
           );
-  const suggestion = summarizeText(
-    result.rectification_suggestion,
-    120,
-    result.audit_result === "通过"
-      ? "无需整改。"
-      : "建议人工查看该视频并确认风险。",
-  );
+  const suggestion = isClearPass
+    ? "无需整改，发布前由运营确认活动价格、国补政策与后台一致即可。"
+    : summarizeText(
+        result.rectification_suggestion,
+        120,
+        displayStatus.key === "passed"
+          ? "无需整改，发布前由运营确认活动价格、国补政策与后台一致即可。"
+          : "建议人工审核该视频并确认风险。",
+      );
 
   return (
     <section className={`douyin-ai-review tone-${tone}`}>
@@ -1280,17 +1689,19 @@ function AuditResultPanel({ result, isAuditing }) {
           <span className="audit-mode-tag">
             {getAuditModeLabel(result.audit_mode)}
           </span>
-          <span className={`audit-result-tag ${getAuditResultClass(result.audit_result)}`}>
+          <span className={`audit-result-tag ${getAuditResultClass(displayStatus.key)}`}>
             {conclusion}
           </span>
-          <span className={`risk-level-tag risk-${getRiskClass(result.risk_level)}`}>
-            {result.risk_level || "无"}风险
-          </span>
+          {displayStatus.showRiskLabel && (
+            <span className={`risk-level-tag risk-${getRiskClass(result.risk_level)}`}>
+              {result.risk_level || "无"}风险
+            </span>
+          )}
         </div>
       </header>
 
       <div className="douyin-ai-core-problem">
-        <span>{result.audit_result === "通过" ? "审核结论" : "主要问题"}</span>
+        <span>{displayStatus.key === "passed" ? "审核结论" : "主要问题"}</span>
         <p>{primaryProblem}</p>
       </div>
 
@@ -1311,13 +1722,17 @@ function AuditResultPanel({ result, isAuditing }) {
       </div>
 
       <div className="douyin-ai-suggestion">
-        <span>建议</span>
+        <span>{displayStatus.key === "human" ? "人工审核建议" : "建议"}</span>
         <p>{suggestion}</p>
       </div>
 
       <details className="douyin-ai-full-details">
         <summary>展开完整质检详情</summary>
         <div>
+          <AuditDetail
+            label="原始模型结论"
+            value={`${result.audit_result || "无"} / ${result.risk_level || "无"}风险`}
+          />
           <AuditList label="命中规则" values={hitRules} emptyText="未命中规则" code />
           <AuditDetail
             label="完整文本证据"
@@ -1332,7 +1747,7 @@ function AuditResultPanel({ result, isAuditing }) {
             value={result.problem_description || "无补充问题说明"}
           />
           <AuditDetail
-            label="完整整改建议"
+            label="完整审核建议"
             value={result.rectification_suggestion || "无需整改"}
           />
           {result.visual_error && (
@@ -1527,47 +1942,11 @@ function buildEvidenceSummary(result) {
 }
 
 function getAuditConclusion(result) {
-  if (result?.audit_status === "timeout") return "质检超时";
-  if (result?.audit_status === "failed") return "质检失败";
-  return result?.audit_result || "建议人工复核";
+  return getDisplayAuditStatus(result).label;
 }
 
 function getAuditTone(result) {
-  if (["failed", "timeout"].includes(result?.audit_status)) return "failed";
-  return {
-    通过: "passed",
-    建议人工复核: "human",
-    需整改: "fix",
-    高风险退回: "high",
-  }[result?.audit_result] ?? "human";
-}
-
-function getFilterCounts(videos) {
-  return {
-    all: videos.length,
-    human: videos.filter((video) => matchesFilter(video.auditResult, "human")).length,
-    fix: videos.filter((video) => matchesFilter(video.auditResult, "fix")).length,
-    high: videos.filter((video) => matchesFilter(video.auditResult, "high")).length,
-    passed: videos.filter((video) => matchesFilter(video.auditResult, "passed")).length,
-    failed: videos.filter((video) => matchesFilter(video.auditResult, "failed")).length,
-  };
-}
-
-function matchesFilter(result, filter) {
-  if (filter === "all") return true;
-  if (!result) return false;
-  if (filter === "human") {
-    return result.need_human_review === true || result.audit_result === "建议人工复核";
-  }
-  if (filter === "fix") return result.audit_result === "需整改";
-  if (filter === "high") {
-    return result.audit_result === "高风险退回" || result.risk_level === "高";
-  }
-  if (filter === "passed") return result.audit_result === "通过";
-  if (filter === "failed") {
-    return ["failed", "timeout"].includes(result.audit_status);
-  }
-  return true;
+  return getDisplayAuditStatus(result).tone;
 }
 
 function sortVideos(videos, sortMode) {
@@ -1577,20 +1956,13 @@ function sortVideos(videos, sortMode) {
 
   if (sortMode === "risk") {
     const rank = {
-      高风险退回: 0,
-      需整改: 1,
-      建议人工复核: 2,
-      通过: 3,
+      human: 0,
+      failed: 1,
+      passed: 2,
     };
     return items.sort((left, right) => {
-      const leftRank =
-        ["failed", "timeout"].includes(left.auditResult?.audit_status)
-          ? 4
-          : (rank[left.auditResult?.audit_result] ?? 5);
-      const rightRank =
-        ["failed", "timeout"].includes(right.auditResult?.audit_status)
-          ? 4
-          : (rank[right.auditResult?.audit_result] ?? 5);
+      const leftRank = rank[getDisplayAuditStatus(left.auditResult).key] ?? 5;
+      const rightRank = rank[getDisplayAuditStatus(right.auditResult).key] ?? 5;
       return leftRank - rightRank || timeSort(left, right);
     });
   }
@@ -1618,20 +1990,174 @@ function sortVideos(videos, sortMode) {
 function getAuditSummary(results) {
   return {
     total: results.length,
-    passed: results.filter((item) => item.audit_result === "通过").length,
-    need_human_review: results.filter((item) => item.need_human_review).length,
-    need_fix: results.filter((item) => item.audit_result === "需整改").length,
-    high_risk: results.filter(
-      (item) => item.audit_result === "高风险退回" || item.risk_level === "高",
-    ).length,
-    failed: results.filter((item) =>
-      ["failed", "timeout"].includes(item.audit_status),
-    ).length,
+    passed: results.filter((item) => getDisplayAuditStatus(item).key === "passed").length,
+    humanReview: results.filter((item) => getDisplayAuditStatus(item).key === "human").length,
+    failed: results.filter((item) => getDisplayAuditStatus(item).key === "failed").length,
   };
+}
+
+function buildAuditRunTitle(accountCount, videoCount) {
+  return `短视频质检 - 账号数 ${accountCount} - 视频数 ${videoCount} - ${formatRunTime(new Date().toISOString())}`;
+}
+
+function buildPersistedRunSummary({
+  accounts,
+  videos,
+  auditResults,
+  auditSummary,
+  resultRange,
+  totalFetched,
+}) {
+  const enriched = videos.map((video) => ({
+    ...video,
+    auditResult: auditResults[video.video_id] ?? null,
+  }));
+  const counts = getFilterCounts(enriched);
+
+  return {
+    account_count: accounts.length,
+    success_account_count: accounts.filter((account) => account.status === "success").length,
+    failed_account_count: accounts.filter((account) => account.status === "failed").length,
+    video_count: videos.length,
+    total: videos.length,
+    passed: counts.passed,
+    humanReview: counts.human,
+    failed: counts.failed,
+    totalFetched: Number(totalFetched) || 0,
+    resultRange,
+    auditSummary,
+    filter_counts: counts,
+  };
+}
+
+function normalizeRestoredRange(value) {
+  const fallback = getClientRange("last7");
+  const rangeType = ["last3", "last7", "last30", "custom"].includes(
+    value?.rangeType,
+  )
+    ? value.rangeType
+    : fallback.rangeType;
+  const range =
+    rangeType === "custom"
+      ? {
+          rangeType,
+          startDate: value?.startDate || fallback.startDate,
+          endDate: value?.endDate || fallback.endDate,
+        }
+      : getClientRange(rangeType);
+
+  return {
+    ...range,
+    startDate: value?.startDate || range.startDate,
+    endDate: value?.endDate || range.endDate,
+  };
+}
+
+function normalizeRestoredTasks(value) {
+  return Array.isArray(value)
+    ? value
+        .filter((task) => task?.secUid)
+        .map((task) => ({
+          ...task,
+          rangeType: task.rangeType || "default",
+          startDate: task.startDate || "",
+          endDate: task.endDate || "",
+          status: task.status || "pending",
+          message: task.message || "",
+        }))
+    : [];
+}
+
+function normalizeAuditResultsMap(value) {
+  if (value && !Array.isArray(value) && typeof value === "object") {
+    return value;
+  }
+
+  if (Array.isArray(value)) {
+    return Object.fromEntries(
+      value
+        .filter((result) => result?.video_id)
+        .map((result) => [result.video_id, result]),
+    );
+  }
+
+  return {};
+}
+
+function getRunSummaryCounts(summary = {}) {
+  const filters = summary.filter_counts ?? {};
+  const passed = Number(summary.passed ?? filters.passed) || 0;
+  const failed = Number(summary.failed ?? filters.failed) || 0;
+  const legacyFix =
+    Number(summary.need_fix ?? summary.rectification ?? filters.fix) || 0;
+  const legacyHigh =
+    Number(summary.high_risk ?? summary.highRisk ?? filters.high) || 0;
+  const humanReview =
+    Number(summary.humanReview ?? summary.need_human_review ?? filters.human) ||
+    0;
+  const total =
+    Number(summary.total ?? summary.video_count ?? filters.all) ||
+    passed + failed + humanReview + legacyFix + legacyHigh;
+
+  return {
+    total,
+    passed,
+    failed,
+    humanReview: humanReview + legacyFix + legacyHigh,
+  };
+}
+
+function getAuditRunApiError(response, payload, fallback) {
+  if (response?.status === 401) {
+    return "登录状态已失效，请重新登录。";
+  }
+
+  if (response?.status === 403) {
+    return "无权限查看或修改该历史记录。";
+  }
+
+  if (
+    response?.status === 404 ||
+    payload?.code === "NOT_FOUND" ||
+    payload?.message === "请求的接口不存在。"
+  ) {
+    return "历史记录接口不可用，请检查后端是否已部署最新版本。";
+  }
+
+  return payload?.message || fallback;
+}
+
+function getRunStatusLabel(value) {
+  return {
+    pending: "待处理",
+    fetched: "已获取作品",
+    auditing: "质检中",
+    completed: "已完成",
+    failed: "失败",
+  }[value] ?? "待处理";
+}
+
+function formatRunTime(value) {
+  if (!value) return "-";
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return new Intl.DateTimeFormat("zh-CN", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(date);
 }
 
 function getAuditResultClass(value) {
   return {
+    passed: "passed",
+    fix: "rectify",
+    high: "rejected",
+    human: "review",
+    failed: "pending",
     通过: "passed",
     需整改: "rectify",
     高风险退回: "rejected",

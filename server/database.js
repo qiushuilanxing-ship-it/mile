@@ -3,16 +3,22 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
+import dotenv from "dotenv";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
+dotenv.config({ path: path.join(currentDirectory, ".env") });
 const dataDirectory = path.join(currentDirectory, "data");
 const databasePath =
-  process.env.SQLITE_PATH || path.join(dataDirectory, "company-ai-tools.db");
-const defaultUsers = [
-  { username: "admin", role: "admin", department: "management" },
-  { username: "content", role: "content", department: "content" },
-  { username: "ops", role: "viewer", department: "ops" },
-];
+  process.env.SQLITE_PATH || path.join(currentDirectory, "data.sqlite");
+const unsafeDefaultUsers = ["admin", "content", "ops"];
+const forbiddenPasswords = new Set([
+  "123456",
+  "password",
+  "admin",
+  "admin123",
+  "12345678",
+  "qwerty123",
+]);
 
 fs.mkdirSync(path.dirname(databasePath), { recursive: true });
 
@@ -32,6 +38,7 @@ function initializeDatabase() {
       password_salt TEXT NOT NULL,
       role TEXT NOT NULL DEFAULT 'viewer',
       department TEXT NOT NULL DEFAULT 'general',
+      name TEXT NOT NULL DEFAULT '',
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime'))
     );
 
@@ -46,11 +53,30 @@ function initializeDatabase() {
       created_at TEXT NOT NULL DEFAULT (datetime('now', 'localtime')),
       FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
     );
+
+    CREATE TABLE IF NOT EXISTS audit_runs (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_by_name TEXT NOT NULL DEFAULT '',
+      default_range_json TEXT NOT NULL DEFAULT '{}',
+      account_tasks_json TEXT NOT NULL DEFAULT '[]',
+      accounts_json TEXT NOT NULL DEFAULT '[]',
+      videos_json TEXT NOT NULL DEFAULT '[]',
+      audit_results_json TEXT NOT NULL DEFAULT '{}',
+      summary_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'pending',
+      note TEXT NOT NULL DEFAULT ''
+    );
   `);
 
   migrateUsers();
-  seedUsers();
+  configureInitialAdmin();
+  disableUnsafeDefaultUsers();
   migrateAiLogs();
+  migrateAuditRuns();
   removeLegacyPromptStorage();
 
   database.exec(`
@@ -75,6 +101,9 @@ function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_sessions_token
       ON sessions(token_hash);
+
+    CREATE INDEX IF NOT EXISTS idx_audit_runs_user_updated
+      ON audit_runs(created_by, updated_at DESC);
   `);
 
   database
@@ -97,6 +126,10 @@ function migrateUsers() {
     );
   }
 
+  if (!columns.some((column) => column.name === "name")) {
+    database.exec("ALTER TABLE users ADD COLUMN name TEXT NOT NULL DEFAULT ''");
+  }
+
   database
     .prepare(
       "UPDATE users SET role = 'admin', department = 'management' WHERE username = 'admin'",
@@ -114,23 +147,71 @@ function migrateUsers() {
     .run();
 }
 
-function seedUsers() {
-  const insertUser = database.prepare(`
-    INSERT OR IGNORE INTO users
-      (username, password_hash, password_salt, role, department)
-    VALUES (?, ?, ?, ?, ?)
-  `);
+function configureInitialAdmin() {
+  const adminPassword = String(process.env.ADMIN_PASSWORD ?? "");
+  const adminUsername = String(process.env.ADMIN_USERNAME || "admin").trim();
+  const adminName = String(process.env.ADMIN_NAME || adminUsername).trim();
+  const userCount = database.prepare("SELECT COUNT(*) AS count FROM users").get();
 
-  for (const user of defaultUsers) {
-    const { hash, salt } = hashPassword(user.username);
-    insertUser.run(
-      user.username,
-      hash,
-      salt,
-      user.role,
-      user.department,
-    );
+  if (!adminPassword) {
+    if (Number(userCount.count) === 0) {
+      console.warn(
+        "[auth] ADMIN_PASSWORD is not configured. Initial admin creation skipped.",
+      );
+    }
+
+    return;
   }
+
+  if (!isStrongInitialPassword(adminPassword, adminUsername)) {
+    console.warn(
+      "[auth] ADMIN_PASSWORD is too weak. Initial admin creation skipped.",
+    );
+    return;
+  }
+
+  upsertUser({
+    username: adminUsername,
+    password: adminPassword,
+    role: "admin",
+    department: "management",
+    name: adminName,
+  });
+
+  const action = Number(userCount.count) === 0 ? "created" : "synced";
+  console.warn(`[auth] Initial admin user ${action} from ADMIN_* env: ${adminUsername}`);
+}
+
+function disableUnsafeDefaultUsers() {
+  for (const username of unsafeDefaultUsers) {
+    const user = database
+      .prepare("SELECT username, password_hash, password_salt FROM users WHERE username = ?")
+      .get(username);
+
+    if (!user || !passwordMatches(user, username)) {
+      continue;
+    }
+
+    const randomPassword = crypto.randomBytes(48).toString("base64url");
+    const { hash, salt } = hashPassword(randomPassword);
+    database
+      .prepare(
+        "UPDATE users SET password_hash = ?, password_salt = ? WHERE username = ?",
+      )
+      .run(hash, salt, username);
+    console.warn(`[auth] Disabled unsafe default password for user: ${username}`);
+  }
+}
+
+function isStrongInitialPassword(password, username) {
+  const value = String(password);
+  const normalized = value.toLowerCase();
+
+  return (
+    value.length >= 8 &&
+    normalized !== String(username).toLowerCase() &&
+    !forbiddenPasswords.has(normalized)
+  );
 }
 
 function migrateAiLogs() {
@@ -146,14 +227,32 @@ function migrateAiLogs() {
     database.exec("ALTER TABLE ai_logs ADD COLUMN request_id TEXT");
   }
 
-  const admin = database
-    .prepare("SELECT id FROM users WHERE username = 'admin'")
+  const fallbackUser = database
+    .prepare("SELECT id FROM users ORDER BY id ASC LIMIT 1")
     .get();
 
-  database
-    .prepare("UPDATE ai_logs SET user_id = ? WHERE user_id IS NULL")
-    .run(admin.id);
+  if (fallbackUser) {
+    database
+      .prepare("UPDATE ai_logs SET user_id = ? WHERE user_id IS NULL")
+      .run(fallbackUser.id);
+  }
+
   database.prepare("UPDATE ai_logs SET type = 'generation'").run();
+}
+
+function migrateAuditRuns() {
+  const columns = database.prepare("PRAGMA table_info(audit_runs)").all();
+  const columnNames = columns.map((column) => column.name);
+
+  if (!columnNames.includes("created_by")) {
+    database.exec("ALTER TABLE audit_runs ADD COLUMN created_by TEXT");
+  }
+
+  if (!columnNames.includes("created_by_name")) {
+    database.exec(
+      "ALTER TABLE audit_runs ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''",
+    );
+  }
 }
 
 function removeLegacyPromptStorage() {
@@ -220,6 +319,19 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString("hex")) {
   };
 }
 
+function passwordMatches(user, password) {
+  const candidate = Buffer.from(
+    hashPassword(String(password), user.password_salt).hash,
+    "hex",
+  );
+  const expected = Buffer.from(user.password_hash, "hex");
+
+  return (
+    candidate.length === expected.length &&
+    crypto.timingSafeEqual(candidate, expected)
+  );
+}
+
 function hashSessionToken(token) {
   return crypto.createHash("sha256").update(token).digest("hex");
 }
@@ -231,7 +343,7 @@ export function authenticateUser(username, password) {
 
   const user = database
     .prepare(
-      `SELECT id, username, password_hash, password_salt, role, department
+      `SELECT id, username, name, password_hash, password_salt, role, department
        FROM users WHERE username = ?`,
     )
     .get(String(username).trim());
@@ -240,20 +352,103 @@ export function authenticateUser(username, password) {
     return null;
   }
 
-  const candidate = Buffer.from(
-    hashPassword(String(password), user.password_salt).hash,
-    "hex",
-  );
-  const expected = Buffer.from(user.password_hash, "hex");
-
-  if (
-    candidate.length !== expected.length ||
-    !crypto.timingSafeEqual(candidate, expected)
-  ) {
+  if (!passwordMatches(user, password)) {
     return null;
   }
 
   return normalizeUser(user);
+}
+
+export function upsertUser({
+  username,
+  password,
+  role = "viewer",
+  department = "general",
+  name: _name = "",
+}) {
+  const cleanUsername = String(username ?? "").trim();
+
+  if (!cleanUsername || !password) {
+    throw new Error("username and password are required");
+  }
+
+  const normalizedRole =
+    role === "admin" ? "admin" : role === "content" ? "content" : "viewer";
+  const { hash, salt } = hashPassword(String(password));
+
+  database
+    .prepare(`
+      INSERT INTO users
+        (username, password_hash, password_salt, role, department, name)
+      VALUES
+        (@username, @password_hash, @password_salt, @role, @department, @name)
+      ON CONFLICT(username) DO UPDATE SET
+        password_hash = excluded.password_hash,
+        password_salt = excluded.password_salt,
+        role = excluded.role,
+        department = excluded.department,
+        name = excluded.name
+    `)
+    .run({
+      username: cleanUsername,
+      password_hash: hash,
+      password_salt: salt,
+      role: normalizedRole,
+      department: String(department || "general"),
+      name: cleanText(_name),
+    });
+
+  return authenticateUser(cleanUsername, password);
+}
+
+export function listUsers() {
+  return database
+    .prepare(`
+      SELECT users.id, users.username, users.name, users.role, users.department,
+             users.created_at,
+             COUNT(ai_logs.id) AS call_count,
+             COALESCE(SUM(ai_logs.token_usage), 0) AS token_count
+      FROM users
+      LEFT JOIN ai_logs ON ai_logs.user_id = users.id
+      GROUP BY users.id
+      ORDER BY users.created_at DESC, users.id DESC
+    `)
+    .all()
+    .map((user) => ({
+      id: user.id,
+      username: user.username,
+      name: user.name || user.username,
+      role: normalizeUser(user).role,
+      department: user.department,
+      created_at: user.created_at,
+      call_count: Number(user.call_count) || 0,
+      token_count: Number(user.token_count) || 0,
+    }));
+}
+
+export function updateUserPassword({ id, password }) {
+  const userId = Number(id);
+
+  if (!Number.isInteger(userId) || userId <= 0 || !password) {
+    throw new Error("valid user id and password are required");
+  }
+
+  const existing = database
+    .prepare("SELECT id, username FROM users WHERE id = ?")
+    .get(userId);
+
+  if (!existing) {
+    return null;
+  }
+
+  const { hash, salt } = hashPassword(String(password));
+  database
+    .prepare(
+      "UPDATE users SET password_hash = ?, password_salt = ? WHERE id = ?",
+    )
+    .run(hash, salt, userId);
+
+  return listUsers().find((user) => Number(user.id) === userId) || null;
 }
 
 export function createSession(userId, maxAgeSeconds = 7 * 24 * 60 * 60) {
@@ -279,7 +474,7 @@ export function getUserBySessionToken(token) {
 
   const user = database
     .prepare(`
-      SELECT users.id, users.username, users.role, users.department
+      SELECT users.id, users.username, users.name, users.role, users.department
       FROM sessions
       JOIN users ON users.id = sessions.user_id
       WHERE sessions.token_hash = ?
@@ -465,10 +660,183 @@ export function getAdminDashboard() {
   };
 }
 
+export function upsertAuditRun({
+  id,
+  title,
+  createdBy,
+  createdByName = "",
+  canUpdateAll = false,
+  defaultRange = {},
+  accountTasks = [],
+  accounts = [],
+  videos = [],
+  auditResults = {},
+  summary = {},
+  status = "pending",
+  note = "",
+}) {
+  const runId = id || crypto.randomUUID();
+  const now = new Date().toISOString();
+  const existing = database
+    .prepare("SELECT id, created_at, created_by FROM audit_runs WHERE id = ?")
+    .get(runId);
+
+  if (
+    existing &&
+    !canUpdateAll &&
+    cleanText(existing.created_by) !== String(createdBy)
+  ) {
+    const error = new Error("无权限修改该质检记录");
+    error.code = "AUDIT_RUN_FORBIDDEN";
+    throw error;
+  }
+
+  const record = {
+    id: runId,
+    title: cleanText(title) || defaultAuditRunTitle(now),
+    created_at: existing?.created_at || now,
+    updated_at: now,
+    created_by: existing?.created_by || String(createdBy),
+    created_by_name:
+      existing?.created_by && canUpdateAll
+        ? undefined
+        : cleanText(createdByName) || "未知创建人",
+    default_range_json: stringifyJson(defaultRange, {}),
+    account_tasks_json: stringifyJson(accountTasks, []),
+    accounts_json: stringifyJson(accounts, []),
+    videos_json: stringifyJson(videos, []),
+    audit_results_json: stringifyJson(auditResults, {}),
+    summary_json: stringifyJson(summary, {}),
+    status: normalizeAuditRunStatus(status),
+    note: cleanText(note),
+  };
+
+  if (existing) {
+    const updateRecord = {
+      ...record,
+      created_by_name:
+        record.created_by_name === undefined
+          ? database
+              .prepare("SELECT created_by_name FROM audit_runs WHERE id = ?")
+              .get(runId)?.created_by_name || ""
+          : record.created_by_name,
+    };
+    database
+      .prepare(`
+        UPDATE audit_runs
+        SET title = @title,
+            updated_at = @updated_at,
+            created_by_name = @created_by_name,
+            default_range_json = @default_range_json,
+            account_tasks_json = @account_tasks_json,
+            accounts_json = @accounts_json,
+            videos_json = @videos_json,
+            audit_results_json = @audit_results_json,
+            summary_json = @summary_json,
+            status = @status,
+            note = @note
+        WHERE id = @id
+      `)
+      .run(updateRecord);
+  } else {
+    database
+      .prepare(`
+        INSERT INTO audit_runs
+          (id, title, created_at, updated_at, created_by, created_by_name, default_range_json,
+           account_tasks_json, accounts_json, videos_json, audit_results_json,
+           summary_json, status, note)
+        VALUES
+          (@id, @title, @created_at, @updated_at, @created_by, @created_by_name, @default_range_json,
+           @account_tasks_json, @accounts_json, @videos_json, @audit_results_json,
+           @summary_json, @status, @note)
+      `)
+      .run(record);
+  }
+
+  return getAuditRun({ id: runId, createdBy, canReadAll: true });
+}
+
+export function getLatestAuditRun({ createdBy, allUsers = false } = {}) {
+  const whereClause = allUsers
+    ? ""
+    : "WHERE created_by = ?";
+  const parameters = allUsers ? [] : [String(createdBy)];
+  const row = database
+    .prepare(`
+      SELECT *
+      FROM audit_runs
+      ${whereClause}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 1
+    `)
+    .get(...parameters);
+
+  return row ? normalizeAuditRun(row, true) : null;
+}
+
+export function listAuditRuns({ createdBy, limit = 20, allUsers = false } = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 20, 1), 100);
+  const whereClause = allUsers
+    ? ""
+    : "WHERE created_by = ?";
+  const parameters = allUsers
+    ? [safeLimit]
+    : [String(createdBy), safeLimit];
+  const rows = database
+    .prepare(`
+      SELECT id, title, created_at, updated_at, created_by, created_by_name,
+             accounts_json, videos_json, summary_json, status, note
+      FROM audit_runs
+      ${whereClause}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT ?
+    `)
+    .all(...parameters);
+
+  return rows.map((row) => normalizeAuditRun(row, false));
+}
+
+export function getAuditRun({ id, createdBy, canReadAll = false }) {
+  const row = database
+    .prepare("SELECT * FROM audit_runs WHERE id = ?")
+    .get(String(id));
+
+  if (!row) return null;
+
+  if (!canReadAll && cleanText(row.created_by) !== String(createdBy)) {
+    const error = new Error("无权限查看该质检记录");
+    error.code = "AUDIT_RUN_FORBIDDEN";
+    throw error;
+  }
+
+  return normalizeAuditRun(row, true);
+}
+
+export function deleteAuditRun({ id, createdBy, canDeleteAll = false }) {
+  const row = database
+    .prepare("SELECT id, created_by FROM audit_runs WHERE id = ?")
+    .get(String(id));
+
+  if (!row) return false;
+
+  if (!canDeleteAll && cleanText(row.created_by) !== String(createdBy)) {
+    const error = new Error("无权限删除该质检记录");
+    error.code = "AUDIT_RUN_FORBIDDEN";
+    throw error;
+  }
+
+  const result = database
+    .prepare("DELETE FROM audit_runs WHERE id = ?")
+    .run(String(id));
+
+  return result.changes > 0;
+}
+
 function normalizeUser(user) {
   return {
     id: user.id,
     username: user.username,
+    name: user.name || user.username,
     role:
       user.role === "admin"
         ? "admin"
@@ -485,6 +853,75 @@ function parseStoredValue(value) {
   } catch {
     return value;
   }
+}
+
+function normalizeAuditRun(row, includePayload) {
+  const summary = parseJsonValue(row.summary_json, {});
+  const accounts = includePayload
+    ? parseJsonValue(row.accounts_json, [])
+    : parseJsonValue(row.accounts_json, []);
+  const videos = includePayload
+    ? parseJsonValue(row.videos_json, [])
+    : parseJsonValue(row.videos_json, []);
+
+  return {
+    id: row.id,
+    title: row.title,
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    created_by: cleanText(row.created_by),
+    created_by_name: cleanText(row.created_by_name) || "未知创建人",
+    status: row.status,
+    note: row.note,
+    summary,
+    account_count:
+      Number(summary.account_count) ||
+      (Array.isArray(accounts) ? accounts.length : 0),
+    video_count:
+      Number(summary.video_count) || (Array.isArray(videos) ? videos.length : 0),
+    ...(includePayload
+      ? {
+          defaultRange: parseJsonValue(row.default_range_json, {}),
+          accountTasks: parseJsonValue(row.account_tasks_json, []),
+          accounts,
+          videos,
+          auditResults: parseJsonValue(row.audit_results_json, {}),
+        }
+      : {}),
+  };
+}
+
+function stringifyJson(value, fallback) {
+  try {
+    return JSON.stringify(value ?? fallback);
+  } catch {
+    return JSON.stringify(fallback);
+  }
+}
+
+function parseJsonValue(value, fallback) {
+  try {
+    const parsed = JSON.parse(value || "");
+    return parsed ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function normalizeAuditRunStatus(value) {
+  return ["pending", "fetched", "auditing", "completed", "failed"].includes(
+    value,
+  )
+    ? value
+    : "pending";
+}
+
+function defaultAuditRunTitle(isoDate) {
+  return `短视频质检 ${isoDate.slice(0, 16).replace("T", " ")}`;
+}
+
+function cleanText(value) {
+  return String(value ?? "").trim();
 }
 
 export function closeDatabase() {
