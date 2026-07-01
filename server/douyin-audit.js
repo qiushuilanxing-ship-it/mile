@@ -13,10 +13,13 @@ export class DouyinRangeError extends Error {
   }
 }
 
+const ZERO_WIDTH_SPACE = String.fromCharCode(0x200b);
+const BYTE_ORDER_MARK = String.fromCharCode(0xfeff);
+
 export function normalizeSecUid(value) {
   return String(value ?? "")
-    .replace(/\u200B/gu, "")
-    .replace(/\uFEFF/gu, "")
+    .replace(new RegExp(ZERO_WIDTH_SPACE, "gu"), "")
+    .replace(new RegExp(BYTE_ORDER_MARK, "gu"), "")
     .trim();
 }
 

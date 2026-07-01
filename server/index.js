@@ -5,6 +5,8 @@ import express from "express";
 import multer from "multer";
 import {
   authenticateUser,
+  cancelDouyinFetchJob,
+  createDouyinFetchJob,
   createAuditRule,
   createSession,
   deleteAuditRule,
@@ -13,6 +15,8 @@ import {
   getAdminDashboard,
   getAuditRule,
   getAuditRun,
+  getDouyinFetchJob,
+  getLatestDouyinFetchJob,
   getGenerationByRequestId,
   getLatestAuditRun,
   getPersonalDashboard,
@@ -27,6 +31,7 @@ import {
   recordGeneration,
   toggleAuditRule,
   updateAuditRule,
+  updateDouyinFetchJob,
   upsertAuditRun,
   updateUserPassword,
   upsertUser,
@@ -665,6 +670,115 @@ app.delete("/api/audit/rules/:id", (request, response) => {
   return sendSuccess(response);
 });
 
+const douyinFetchJobQueue = [];
+let activeDouyinFetchJobId = null;
+
+app.post("/api/audit/fetch-jobs", (request, response) => {
+  try {
+    const user = getCurrentUser(request);
+    if (!user) return sendFailure(response, 401, "请先登录后再创建获取任务");
+
+    const profileMap = getAccountProfileMap();
+    const { defaultRangeInput, accountTasks } = normalizeAccountTasks(
+      request.body,
+      profileMap,
+    );
+
+    if (accountTasks.length === 0) {
+      return sendFailure(response, 400, "请先添加至少一个抖音账号任务。");
+    }
+
+    if (accountTasks.length > 10) {
+      return sendFailure(response, 400, "一次最多支持 10 个抖音账号。");
+    }
+
+    const defaultRange = resolveDouyinRange(defaultRangeInput);
+    const job = createDouyinFetchJob({
+      createdBy: user.id,
+      createdByName: user.name || user.username,
+      defaultRange,
+      accountTasks,
+    });
+
+    enqueueDouyinFetchJob(job.id);
+    logInfo("douyin.fetch_job.created", {
+      ...requestContext(request),
+      job_id: job.id,
+      account_count: accountTasks.length,
+    });
+
+    return sendSuccess(response, {
+      job_id: job.id,
+      status: job.status,
+    }, 201);
+  } catch (error) {
+    logError("douyin.fetch_job.create_failed", error, requestContext(request));
+    return sendFailure(
+      response,
+      error instanceof DouyinRangeError ? 400 : 500,
+      error instanceof DouyinRangeError
+        ? "日期范围不正确，请检查开始日期和结束日期。"
+        : "创建获取任务失败，请稍后重试。",
+    );
+  }
+});
+
+app.get("/api/audit/fetch-jobs/latest", (request, response) => {
+  try {
+    const user = getCurrentUser(request);
+    const job = getLatestDouyinFetchJob({
+      createdBy: user?.id,
+      canReadAll: false,
+    });
+    return sendSuccess(response, { job });
+  } catch (error) {
+    logError("douyin.fetch_job.latest_failed", error, requestContext(request));
+    return sendFailure(response, 500, "读取最近获取任务失败。");
+  }
+});
+
+app.get("/api/audit/fetch-jobs/:jobId", (request, response) => {
+  try {
+    const user = getCurrentUser(request);
+    const job = getDouyinFetchJob({
+      id: request.params.jobId,
+      createdBy: user?.id,
+      canReadAll: isAdmin(user),
+    });
+
+    if (!job) return sendFailure(response, 404, "获取任务不存在。");
+
+    return sendSuccess(response, { job });
+  } catch (error) {
+    if (error.code === "DOUYIN_FETCH_JOB_FORBIDDEN") {
+      return sendFailure(response, 403, "无权限查看该获取任务。");
+    }
+    logError("douyin.fetch_job.detail_failed", error, requestContext(request));
+    return sendFailure(response, 500, "读取获取任务失败。");
+  }
+});
+
+app.post("/api/audit/fetch-jobs/:jobId/cancel", (request, response) => {
+  try {
+    const user = getCurrentUser(request);
+    const job = cancelDouyinFetchJob({
+      id: request.params.jobId,
+      createdBy: user?.id,
+      canCancelAll: isAdmin(user),
+    });
+
+    if (!job) return sendFailure(response, 404, "获取任务不存在。");
+
+    return sendSuccess(response, { status: job.status, job });
+  } catch (error) {
+    if (error.code === "DOUYIN_FETCH_JOB_FORBIDDEN") {
+      return sendFailure(response, 403, "无权限取消该获取任务。");
+    }
+    logError("douyin.fetch_job.cancel_failed", error, requestContext(request));
+    return sendFailure(response, 500, "取消获取任务失败。");
+  }
+});
+
 app.post("/api/audit/douyin-account", async (request, response) => {
   const profileMap = getAccountProfileMap();
   const { defaultRangeInput, accountTasks } = normalizeAccountTasks(
@@ -766,7 +880,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
             startIndex: accountIndex,
             defaultRange,
             message:
-              "\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u5df2\u6682\u505c\u8be5\u8d26\u53f7\u3002\u53ef\u70b9\u51fb\u201c\u7ee7\u7eed\u83b7\u53d6\u5f85\u91cd\u8bd5\u8d26\u53f7\u201d\u3002",
+              "本次请求耗时较长，已暂停该账号。可点击“继续获取待重试账号”。",
           }),
         );
         break;
@@ -834,7 +948,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
                 startIndex: accountIndex + 1,
                 defaultRange,
                 message:
-                  "\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u5df2\u6682\u505c\u8be5\u8d26\u53f7\u3002\u53ef\u70b9\u51fb\u201c\u7ee7\u7eed\u83b7\u53d6\u5f85\u91cd\u8bd5\u8d26\u53f7\u201d\u3002",
+                  "本次请求耗时较长，已暂停该账号。可点击“继续获取待重试账号”。",
               }),
             );
           }
@@ -916,7 +1030,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
       ...(overallPartial
         ? {
             message:
-              "\u5df2\u83b7\u53d6\u90e8\u5206\u4f5c\u54c1\uff0c\u56e0\u8017\u65f6\u8f83\u957f\u5df2\u63d0\u524d\u505c\u6b62\uff0c\u53ef\u7a0d\u540e\u91cd\u8bd5\u7ee7\u7eed\u83b7\u53d6\u3002",
+              "已获取部分作品，因耗时较长已提前停止，可稍后重试继续获取。",
           }
         : {}),
       count: videos.length,
@@ -932,8 +1046,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         failed_count: accounts.filter((account) => account.status === "failed")
           .length,
         partial_count: accounts.filter(
-          (account) =>
-            ["partial_success", "pending_retry"].includes(account.status),
+          (account) => account.status === "partial_success",
         ).length,
         pending_retry_count: accounts.filter(
           (account) => account.status === "pending_retry",
@@ -1035,6 +1148,248 @@ app.post("/api/audit/douyin-account", async (request, response) => {
   }
 });
 
+function enqueueDouyinFetchJob(jobId) {
+  if (!douyinFetchJobQueue.includes(jobId) && activeDouyinFetchJobId !== jobId) {
+    douyinFetchJobQueue.push(jobId);
+  }
+  queueMicrotask(processDouyinFetchJobQueue);
+}
+
+async function processDouyinFetchJobQueue() {
+  if (activeDouyinFetchJobId || douyinFetchJobQueue.length === 0) return;
+
+  const jobId = douyinFetchJobQueue.shift();
+  activeDouyinFetchJobId = jobId;
+  try {
+    await runDouyinFetchJob(jobId);
+  } catch (error) {
+    console.error("[Douyin Fetch Job] failed:", jobId, error);
+    updateDouyinFetchJob({
+      id: jobId,
+      status: "failed",
+      errorMessage: error.message || "获取任务失败",
+      progress: { stop_reason: "job_error" },
+      finished: true,
+    });
+  } finally {
+    activeDouyinFetchJobId = null;
+    queueMicrotask(processDouyinFetchJobQueue);
+  }
+}
+
+async function runDouyinFetchJob(jobId) {
+  let job = getDouyinFetchJob({ id: jobId, canReadAll: true });
+  if (!job) return;
+  if (job.status === "cancelled") return;
+
+  const accountTasks = Array.isArray(job.accountTasks) ? job.accountTasks : [];
+  const defaultRange = job.defaultRange || {};
+  const accounts = [];
+  let videos = [];
+  let totalFetched = 0;
+
+  console.log("[Douyin Fetch Job] job started:", jobId);
+  updateDouyinFetchJob({
+    id: jobId,
+    status: "running",
+    accounts,
+    videos,
+    progress: {
+      current_account_index: 0,
+      total_accounts: accountTasks.length,
+      current_account_name: "",
+      current_offset: 0,
+      page_limit: PAGE_LIMIT,
+      raw_fetched_count: 0,
+      date_matched_count: 0,
+      deduped_count: 0,
+      returned_count: 0,
+      stop_reason: "running",
+    },
+  });
+
+  for (let accountIndex = 0; accountIndex < accountTasks.length; accountIndex += 1) {
+    job = getDouyinFetchJob({ id: jobId, canReadAll: true });
+    if (job?.status === "cancelled") {
+      console.log("[Douyin Fetch Job] job cancelled:", jobId);
+      return;
+    }
+
+    const task = accountTasks[accountIndex];
+    const rangeInput = resolveAccountTaskRangeInput(task, defaultRange);
+    const accountName =
+      task.profile?.frontend_name ||
+      task.profile?.erp_name ||
+      task.profile?.douyin_id ||
+      task.secUid;
+    let accountRange;
+
+    try {
+      accountRange = resolveDouyinRange(rangeInput);
+      const account = await fetchDouyinAccountVideos({
+        secUid: task.secUid,
+        accountIndex: accountIndex + 1,
+        range: accountRange,
+        profile: task.profile,
+        profileMatched: task.profileMatched,
+        requestStartedAt: Number.NaN,
+        responseSoftBudgetMs: Number.POSITIVE_INFINITY,
+        accountBudgetMsOverride: Number.POSITIVE_INFINITY,
+        getCollectedVideoCount: () => videos.length,
+        onProgress: async ({ offset, videos: accountVideos, totalFetched: accountFetched, debug }) => {
+          const latestJob = getDouyinFetchJob({ id: jobId, canReadAll: true });
+          if (latestJob?.status === "cancelled") return;
+          const progressVideos = mergeDouyinJobVideos(videos, accountVideos);
+          const progressAccounts = [
+            ...accounts,
+            {
+              account_index: accountIndex + 1,
+              secUid: task.secUid,
+              author_name: accountVideos.find((video) => video.author_name)?.author_name || "",
+              ...pickAccountProfileFields(task.profile),
+              profile_matched: task.profileMatched,
+              range_label: formatRangeLabel(accountRange),
+              range_type: accountRange.rangeType,
+              count: accountVideos.length,
+              status: "running",
+              message: "正在获取作品",
+              videos: [],
+              totalFetched: accountFetched,
+              debug,
+            },
+          ];
+          const progress = {
+            current_account_index: accountIndex + 1,
+            total_accounts: accountTasks.length,
+            current_account_name: accountName,
+            current_offset: offset,
+            page_limit: PAGE_LIMIT,
+            raw_fetched_count: debug.rawFetchedCount || 0,
+            date_matched_count: debug.dateMatchedCount || 0,
+            deduped_count: debug.dedupedCount || 0,
+            returned_count: progressVideos.length,
+            stop_reason: debug.stopReason || "running",
+          };
+          updateDouyinFetchJob({
+            id: jobId,
+            status: "running",
+            accounts: progressAccounts,
+            videos: progressVideos,
+            progress,
+          });
+          console.log("[Douyin Fetch Job] job progress:", jobId, progress);
+        },
+      });
+
+      job = getDouyinFetchJob({ id: jobId, canReadAll: true });
+      if (job?.status === "cancelled") {
+        console.log("[Douyin Fetch Job] job cancelled:", jobId);
+        return;
+      }
+
+      accounts.push(account);
+      videos = mergeDouyinJobVideos(videos, account.videos);
+      totalFetched += account.totalFetched;
+      updateDouyinFetchJob({
+        id: jobId,
+        status: "running",
+        accounts,
+        videos,
+        progress: {
+          current_account_index: accountIndex + 1,
+          total_accounts: accountTasks.length,
+          current_account_name: accountName,
+          current_offset: account.debug?.offset || 0,
+          page_limit: PAGE_LIMIT,
+          raw_fetched_count: account.debug?.rawFetchedCount || 0,
+          date_matched_count: account.debug?.dateMatchedCount || 0,
+          deduped_count: account.debug?.dedupedCount || 0,
+          returned_count: videos.length,
+          stop_reason: account.debug?.stopReason || "account_done",
+        },
+      });
+    } catch (error) {
+      const accountMessage = getDouyinAccountErrorMessage(error);
+      accounts.push({
+        account_index: accountIndex + 1,
+        secUid: task.secUid,
+        author_name: "",
+        ...pickAccountProfileFields(task.profile),
+        profile_matched: task.profileMatched,
+        range_label: accountRange ? formatRangeLabel(accountRange) : getTaskRangeLabel(task, defaultRange),
+        range_type: accountRange?.rangeType || rangeInput.rangeType,
+        count: 0,
+        status: "failed",
+        message: accountMessage,
+        videos: [],
+        totalFetched: 0,
+        debug: error.douyinDebug || { stopReason: "crawler_error" },
+      });
+      updateDouyinFetchJob({
+        id: jobId,
+        status: "running",
+        accounts,
+        videos,
+        progress: {
+          current_account_index: accountIndex + 1,
+          total_accounts: accountTasks.length,
+          current_account_name: accountName,
+          current_offset: 0,
+          page_limit: PAGE_LIMIT,
+          returned_count: videos.length,
+          stop_reason: "account_failed",
+        },
+        errorMessage: accountMessage,
+      });
+    }
+  }
+
+  videos.sort((left, right) => Number(right.create_time_ts) - Number(left.create_time_ts));
+  videos = videos.map((video, index) => ({ ...video, index: index + 1 }));
+  const hasVideos = videos.length > 0;
+  const hasPartial = accounts.some((account) => account.status === "partial_success");
+  const hasFailed = accounts.some((account) => account.status === "failed");
+  const finalStatus = !hasVideos ? "failed" : hasPartial || hasFailed ? "partial" : "completed";
+  updateDouyinFetchJob({
+    id: jobId,
+    status: finalStatus,
+    accounts,
+    videos,
+    progress: {
+      current_account_index: accounts.length,
+      total_accounts: accountTasks.length,
+      current_account_name: "",
+      current_offset: 0,
+      page_limit: PAGE_LIMIT,
+      raw_fetched_count: totalFetched,
+      date_matched_count: videos.length,
+      deduped_count: videos.length,
+      returned_count: videos.length,
+      stop_reason: finalStatus,
+    },
+    errorMessage: hasVideos ? "" : "未获取到作品",
+    finished: true,
+  });
+  console.log("[Douyin Fetch Job] job completed:", jobId, {
+    status: finalStatus,
+    video_count: videos.length,
+    account_count: accounts.length,
+  });
+}
+
+function mergeDouyinJobVideos(existingVideos = [], incomingVideos = []) {
+  const map = new Map();
+  for (const video of [...existingVideos, ...incomingVideos]) {
+    const key =
+      String(video?.video_id || video?.aweme_id || video?.item_id || video?.share_url || "").trim();
+    if (!key) continue;
+    map.set(key, { ...map.get(key), ...video });
+  }
+  return [...map.values()].sort(
+    (left, right) => Number(right.create_time_ts) - Number(left.create_time_ts),
+  );
+}
+
 function normalizeAccountTasks(body, profileMap = new Map()) {
   const defaultRangeInput = {
     rangeType:
@@ -1104,12 +1459,15 @@ async function fetchDouyinAccountVideos({
   profileMatched,
   requestStartedAt,
   responseSoftBudgetMs = RESPONSE_SOFT_BUDGET_MS,
+  accountBudgetMsOverride,
   getCollectedVideoCount = () => 0,
+  onProgress,
 }) {
   const uniqueAwemes = new Map();
   const pageLimit = PAGE_LIMIT;
   const maxVideos = getRangeMaxVideos(range.rangeType);
-  const accountBudgetMs = getAccountFetchBudgetMs(range.rangeType);
+  const accountBudgetMs =
+    accountBudgetMsOverride ?? getAccountFetchBudgetMs(range.rangeType);
   const startedAt = Date.now();
   const dateMatchedIds = new Set();
   let pageCount = 0;
@@ -1299,6 +1657,34 @@ async function fetchDouyinAccountVideos({
         partial: isPartialStopReason(stopReason),
       });
 
+      if (onProgress) {
+        await onProgress({
+          offset,
+          totalFetched: uniqueAwemes.size,
+          videos: buildDouyinVideos([...uniqueAwemes.values()], {
+            startTime: range.startTime,
+            endTime: range.endTime,
+            limit: maxVideos,
+          }).map((video) => ({
+            ...video,
+            secUid,
+            account_index: accountIndex,
+            ...pickAccountProfileFields(profile),
+            profile_matched: profileMatched,
+            account_range_label: formatRangeLabel(range),
+            account_range_type: range.rangeType,
+          })),
+          debug: {
+            stopReason,
+            pageCount,
+            rawFetchedCount,
+            dateMatchedCount: dateMatchedIds.size,
+            dedupedCount: uniqueAwemes.size,
+            returnedCount: Math.min(dateMatchedIds.size, maxVideos),
+          },
+        });
+      }
+
       if (stopReason !== "continue") {
         break;
       }
@@ -1376,7 +1762,7 @@ async function fetchDouyinAccountVideos({
   if (accountVideos.length === 0 && ["crawler_timeout", "crawler_error"].includes(debug.stopReason)) {
     const error = lastError || new DouyinCrawlerError("Crawler failed before any works were fetched.");
     if (debug.stopReason === "crawler_timeout") {
-      error.message = "Crawler timeout\uff1a\u672a\u83b7\u53d6\u5230\u4f5c\u54c1";
+      error.message = "Crawler timeout：未获取到作品";
     }
     error.douyinDebug = debug;
     throw error;
@@ -1431,14 +1817,14 @@ function isPartialStopReason(stopReason) {
 
 function buildPartialFetchMessage(count, stopReason) {
   if (stopReason === "time_budget_partial") {
-    return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0\u8017\u65f6\u8f83\u957f\u5df2\u63d0\u524d\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
+    return "已获取 " + count + " 条作品，因耗时较长已提前停止，结果可能不完整";
   }
 
   if (["timeout_partial", "page_timeout_partial"].includes(stopReason)) {
-    return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0 crawler \u54cd\u5e94\u8d85\u65f6\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
+    return "已获取 " + count + " 条作品，因 crawler 响应超时停止，结果可能不完整";
   }
 
-  return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0 crawler \u5f02\u5e38\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
+  return "已获取 " + count + " 条作品，因 crawler 异常停止，结果可能不完整";
 }
 
 function shouldStopForResponseBudget({
@@ -1585,18 +1971,18 @@ function extractCrawlerErrorDetail(data) {
 
 function getDouyinAccountErrorMessage(error) {
   if (error?.douyinDebug?.stopReason === "crawler_timeout") {
-    return "Crawler timeout\uff1a\u672a\u83b7\u53d6\u5230\u4f5c\u54c1";
+    return "Crawler timeout：未获取到作品";
   }
 
   if (error?.name === "AbortError") {
-    return "Crawler timeout\uff1a\u672a\u83b7\u53d6\u5230\u4f5c\u54c1";
+    return "Crawler timeout：未获取到作品";
   }
 
   if (error instanceof TypeError && /fetch|network/iu.test(error.message)) {
-    return `Crawler \u7f51\u7edc\u8bf7\u6c42\u5931\u8d25\uff1a${error.message}`;
+    return `Crawler 网络请求失败：${error.message}`;
   }
 
-  return error?.message || "\u8d26\u53f7\u4f5c\u54c1\u83b7\u53d6\u5931\u8d25";
+  return error?.message || "账号作品获取失败";
 }
 
 function formatRangeLabel(range) {
@@ -2168,7 +2554,7 @@ function areAuditItemsSimilar(a, b) {
 function tokenizeComparableText(value) {
   const text = normalizeComparableContent(value);
   if (!text) return [];
-  if (/[\u4e00-\u9fff]/u.test(text)) {
+  if (/[一-鿿]/u.test(text)) {
     return Array.from(new Set([...text]));
   }
   return Array.from(new Set(text.split(/[^\p{L}\p{N}]+/u).filter(Boolean)));
@@ -3124,7 +3510,7 @@ function normalizeUploadFileName(value) {
   if (!canBeLatin1) return fileName;
 
   const decoded = Buffer.from(fileName, "latin1").toString("utf8");
-  return decoded.includes("\uFFFD") ? fileName : decoded;
+  return decoded.includes(String.fromCharCode(0xfffd)) ? fileName : decoded;
 }
 
 function sendFailure(

@@ -91,6 +91,22 @@ function initializeDatabase() {
       created_at TEXT NOT NULL,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS douyin_fetch_jobs (
+      id TEXT PRIMARY KEY,
+      created_by TEXT,
+      created_by_name TEXT,
+      status TEXT NOT NULL,
+      range_json TEXT NOT NULL DEFAULT '{}',
+      account_tasks_json TEXT NOT NULL DEFAULT '[]',
+      accounts_json TEXT NOT NULL DEFAULT '[]',
+      videos_json TEXT NOT NULL DEFAULT '[]',
+      progress_json TEXT NOT NULL DEFAULT '{}',
+      error_message TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      finished_at TEXT
+    );
   `);
 
   migrateUsers();
@@ -132,6 +148,12 @@ function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_audit_rules_enabled_updated
       ON audit_rules(enabled, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_douyin_fetch_jobs_user_updated
+      ON douyin_fetch_jobs(created_by, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_douyin_fetch_jobs_status_updated
+      ON douyin_fetch_jobs(status, updated_at DESC);
   `);
 
   database
@@ -1306,6 +1328,198 @@ function normalizeAuditRunStatus(value) {
   return ["pending", "fetched", "auditing", "completed", "failed"].includes(
     value,
   )
+    ? value
+    : "pending";
+}
+
+export function createDouyinFetchJob({
+  createdBy,
+  createdByName = "",
+  defaultRange = {},
+  accountTasks = [],
+}) {
+  const now = new Date().toISOString();
+  const id = crypto.randomUUID();
+  database
+    .prepare(`
+      INSERT INTO douyin_fetch_jobs
+        (id, created_by, created_by_name, status, range_json, account_tasks_json,
+         accounts_json, videos_json, progress_json, error_message, created_at, updated_at, finished_at)
+      VALUES
+        (@id, @created_by, @created_by_name, @status, @range_json, @account_tasks_json,
+         @accounts_json, @videos_json, @progress_json, @error_message, @created_at, @updated_at, @finished_at)
+    `)
+    .run({
+      id,
+      created_by: String(createdBy ?? ""),
+      created_by_name: cleanText(createdByName),
+      status: "pending",
+      range_json: stringifyJson(defaultRange, {}),
+      account_tasks_json: stringifyJson(accountTasks, []),
+      accounts_json: "[]",
+      videos_json: "[]",
+      progress_json: stringifyJson(
+        {
+          current_account_index: 0,
+          total_accounts: Array.isArray(accountTasks) ? accountTasks.length : 0,
+          current_account_name: "",
+          current_offset: 0,
+          page_limit: 20,
+          raw_fetched_count: 0,
+          date_matched_count: 0,
+          deduped_count: 0,
+          returned_count: 0,
+          stop_reason: "pending",
+        },
+        {},
+      ),
+      error_message: "",
+      created_at: now,
+      updated_at: now,
+      finished_at: null,
+    });
+
+  return getDouyinFetchJob({ id, canReadAll: true });
+}
+
+export function updateDouyinFetchJob({
+  id,
+  status,
+  accounts,
+  videos,
+  progress,
+  errorMessage,
+  finished = false,
+}) {
+  const existing = database
+    .prepare("SELECT * FROM douyin_fetch_jobs WHERE id = ?")
+    .get(String(id));
+
+  if (!existing) return null;
+
+  const now = new Date().toISOString();
+  database
+    .prepare(`
+      UPDATE douyin_fetch_jobs
+      SET status = @status,
+          accounts_json = @accounts_json,
+          videos_json = @videos_json,
+          progress_json = @progress_json,
+          error_message = @error_message,
+          updated_at = @updated_at,
+          finished_at = @finished_at
+      WHERE id = @id
+    `)
+    .run({
+      id: String(id),
+      status: normalizeDouyinFetchJobStatus(status || existing.status),
+      accounts_json:
+        accounts === undefined
+          ? existing.accounts_json
+          : stringifyJson(accounts, []),
+      videos_json:
+        videos === undefined ? existing.videos_json : stringifyJson(videos, []),
+      progress_json:
+        progress === undefined
+          ? existing.progress_json
+          : stringifyJson(progress, {}),
+      error_message:
+        errorMessage === undefined
+          ? existing.error_message
+          : cleanText(errorMessage),
+      updated_at: now,
+      finished_at: finished ? now : existing.finished_at,
+    });
+
+  return getDouyinFetchJob({ id, canReadAll: true });
+}
+
+export function getDouyinFetchJob({ id, createdBy, canReadAll = false }) {
+  const row = database
+    .prepare("SELECT * FROM douyin_fetch_jobs WHERE id = ?")
+    .get(String(id ?? ""));
+
+  if (!row) return null;
+
+  if (!canReadAll && cleanText(row.created_by) !== String(createdBy)) {
+    const error = new Error("无权限查看该获取任务");
+    error.code = "DOUYIN_FETCH_JOB_FORBIDDEN";
+    throw error;
+  }
+
+  return normalizeDouyinFetchJob(row);
+}
+
+export function getLatestDouyinFetchJob({ createdBy, canReadAll = false } = {}) {
+  const whereClause = canReadAll ? "" : "WHERE created_by = ?";
+  const parameters = canReadAll ? [] : [String(createdBy ?? "")];
+  const row = database
+    .prepare(`
+      SELECT *
+      FROM douyin_fetch_jobs
+      ${whereClause}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 1
+    `)
+    .get(...parameters);
+
+  return row ? normalizeDouyinFetchJob(row) : null;
+}
+
+export function cancelDouyinFetchJob({ id, createdBy, canCancelAll = false }) {
+  const row = database
+    .prepare("SELECT id, created_by FROM douyin_fetch_jobs WHERE id = ?")
+    .get(String(id ?? ""));
+
+  if (!row) return null;
+
+  if (!canCancelAll && cleanText(row.created_by) !== String(createdBy)) {
+    const error = new Error("无权限取消该获取任务");
+    error.code = "DOUYIN_FETCH_JOB_FORBIDDEN";
+    throw error;
+  }
+
+  return updateDouyinFetchJob({
+    id,
+    status: "cancelled",
+    progress: {
+      ...(getDouyinFetchJob({ id, canReadAll: true })?.progress || {}),
+      stop_reason: "cancelled",
+    },
+    finished: true,
+  });
+}
+
+function normalizeDouyinFetchJob(row) {
+  const accounts = parseJsonValue(row.accounts_json, []);
+  const videos = parseJsonValue(row.videos_json, []);
+  const progress = parseJsonValue(row.progress_json, {});
+  return {
+    id: row.id,
+    created_by: cleanText(row.created_by),
+    created_by_name: cleanText(row.created_by_name),
+    status: normalizeDouyinFetchJobStatus(row.status),
+    defaultRange: parseJsonValue(row.range_json, {}),
+    accountTasks: parseJsonValue(row.account_tasks_json, []),
+    accounts: Array.isArray(accounts) ? accounts : [],
+    videos: Array.isArray(videos) ? videos : [],
+    progress: progress && typeof progress === "object" ? progress : {},
+    error_message: cleanText(row.error_message),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+    finished_at: row.finished_at,
+  };
+}
+
+function normalizeDouyinFetchJobStatus(value) {
+  return [
+    "pending",
+    "running",
+    "partial",
+    "completed",
+    "failed",
+    "cancelled",
+  ].includes(value)
     ? value
     : "pending";
 }

@@ -93,6 +93,9 @@ export default function DouyinAuditPage({ user }) {
   const [resultRange, setResultRange] = useState(null);
   const [totalFetched, setTotalFetched] = useState(0);
   const [responseMessage, setResponseMessage] = useState("");
+  const [fetchJobId, setFetchJobId] = useState("");
+  const [fetchJobStatus, setFetchJobStatus] = useState("");
+  const [fetchJobProgress, setFetchJobProgress] = useState(null);
   const [auditResults, setAuditResults] = useState({});
   const [manualReviews, setManualReviews] = useState({});
   const [feedbacks, setFeedbacks] = useState({});
@@ -176,8 +179,13 @@ export default function DouyinAuditPage({ user }) {
 
   useEffect(() => {
     loadAccountProfiles();
-    loadLatestAuditRun();
-    loadHistoryRuns();
+    void (async () => {
+      const latestJob = await loadLatestFetchJob();
+      if (!["pending", "running"].includes(latestJob?.status)) {
+        await loadLatestAuditRun();
+      }
+      await loadHistoryRuns();
+    })();
   }, []);
 
   useEffect(() => {
@@ -294,6 +302,21 @@ export default function DouyinAuditPage({ user }) {
     return () => window.clearTimeout(timer);
   }, [copyMessage]);
 
+  useEffect(() => {
+    if (!fetchJobId || !isLoading) return undefined;
+    let stopped = false;
+    const tick = async () => {
+      if (stopped) return;
+      await pollFetchJob(fetchJobId);
+    };
+    tick();
+    const timer = window.setInterval(tick, 2000);
+    return () => {
+      stopped = true;
+      window.clearInterval(timer);
+    };
+  }, [fetchJobId, isLoading]);
+
   function selectRange(nextRangeType) {
     setRangeType(nextRangeType);
     if (nextRangeType !== "custom") {
@@ -391,6 +414,24 @@ export default function DouyinAuditPage({ user }) {
       setProfileError("");
     } catch (requestError) {
       setProfileError(requestError.message || "账号资料库读取失败。");
+    }
+  }
+
+  async function loadLatestFetchJob() {
+    try {
+      const response = await fetch("/api/audit/fetch-jobs/latest");
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false || !payload?.job) return null;
+      const job = payload.job;
+      setFetchJobId(job.id || "");
+      applyFetchJob(job);
+      if (["pending", "running"].includes(job.status)) {
+        setIsLoading(true);
+      }
+      return job;
+    } catch {
+      // Fetch job restore is best-effort; audit history restore still handles saved results.
+      return null;
     }
   }
 
@@ -862,7 +903,7 @@ export default function DouyinAuditPage({ user }) {
 
     if (videos.length > 0) {
       const confirmed = window.confirm(
-        "???? " + videos.length + " ???????????????????????",
+        "当前已有 " + videos.length + " 条作品，重新获取可能会覆盖当前结果。是否继续？",
       );
 
       if (!confirmed) return;
@@ -881,7 +922,7 @@ export default function DouyinAuditPage({ user }) {
     );
 
     if (retryTasks.length === 0) {
-      setRunError("??????????");
+      setRunError("没有需要继续获取的账号。");
       return;
     }
 
@@ -896,12 +937,12 @@ export default function DouyinAuditPage({ user }) {
     const targetTasks = Array.isArray(tasks) ? tasks : [];
 
     if (targetTasks.length === 0) {
-      setError("???????????????");
+      setError("请先添加至少一个抖音账号任务。");
       return;
     }
 
     if (targetTasks.length > 10) {
-      setError("?????? 10 ??????");
+      setError("一次最多支持 10 个抖音账号。");
       return;
     }
 
@@ -910,15 +951,14 @@ export default function DouyinAuditPage({ user }) {
         task.rangeType === "custom" &&
         (!normalizeDateForApi(task.startDate) ||
           !normalizeDateForApi(task.endDate) ||
-          normalizeDateForApi(task.startDate) >
-            normalizeDateForApi(task.endDate)),
+          normalizeDateForApi(task.startDate) > normalizeDateForApi(task.endDate)),
     );
 
     if (invalidCustomTask) {
       setError(
-        "?? " +
+        "账号 " +
           shortSecUid(invalidCustomTask.secUid) +
-          " ????????????????",
+          " 的自定义日期不完整或顺序不正确。",
       );
       return;
     }
@@ -926,30 +966,24 @@ export default function DouyinAuditPage({ user }) {
     const normalizedStartDate = normalizeDateForApi(startDate);
     const normalizedEndDate = normalizeDateForApi(endDate);
 
-    if (
-      !normalizedStartDate ||
-      !normalizedEndDate ||
-      normalizedStartDate > normalizedEndDate
-    ) {
-      setError("????????????????");
+    if (!normalizedStartDate || !normalizedEndDate || normalizedStartDate > normalizedEndDate) {
+      setError("请选择有效的开始日期和结束日期。");
       return;
     }
 
     const requestedRange =
       rangeType === "custom"
-        ? {
-            rangeType,
-            startDate: normalizedStartDate,
-            endDate: normalizedEndDate,
-          }
+        ? { rangeType, startDate: normalizedStartDate, endDate: normalizedEndDate }
         : getClientRange(rangeType);
 
     setIsLoading(true);
     setIsAuditing(false);
     setError("");
     setAuditError("");
-    setResponseMessage("");
+    setResponseMessage("正在创建后台获取任务...");
     setHasSearched(true);
+    setFetchJobStatus("pending");
+    setFetchJobProgress(null);
 
     if (!append) {
       setVideos([]);
@@ -969,13 +1003,13 @@ export default function DouyinAuditPage({ user }) {
     setAccountTasks((currentTasks) =>
       currentTasks.map((task) =>
         loadingSecUids.has(task.secUid)
-          ? { ...task, status: "loading", message: "" }
+          ? { ...task, status: "loading", message: "已进入后台队列" }
           : task,
       ),
     );
 
     try {
-      const response = await fetch("/api/audit/douyin-account", {
+      const response = await fetch("/api/audit/fetch-jobs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -987,93 +1021,103 @@ export default function DouyinAuditPage({ user }) {
       const payload = await response.json().catch(() => null);
 
       if (!response.ok || payload?.success === false) {
-        throw new Error(payload?.message || "???????????????");
+        throw new Error(payload?.message || "创建获取任务失败，请稍后重试。");
       }
 
-      const incomingVideos = Array.isArray(payload?.videos)
-        ? payload.videos.map((video) => ({
-            ...video,
-            ai_audit_status: video.ai_audit_status || "not_started",
-            ai_audit_error: video.ai_audit_error || "",
-            ai_audit_last_at: video.ai_audit_last_at || "",
-          }))
-        : [];
-      const incomingAccounts = Array.isArray(payload?.accounts)
-        ? payload.accounts
-        : [];
-      const nextVideos = append
-        ? mergeVideosByIdentity(videos, incomingVideos)
-        : incomingVideos;
-      const nextAccounts = append
-        ? mergeAccountsBySecUid(accounts, incomingAccounts)
-        : incomingAccounts;
-      const nextResultRange = payload?.defaultRange ?? requestedRange;
-      const nextTotalFetched = append
-        ? totalFetched + (Number(payload?.totalFetched) || 0)
-        : Number(payload?.totalFetched) || 0;
-      const accountsBySecUid = new Map(
-        incomingAccounts.map((account) => [normalizeClientSecUid(account.secUid), account]),
+      setFetchJobId(payload.job_id || "");
+      setFetchJobStatus(payload.status || "pending");
+      setResponseMessage("获取任务已创建，后台正在分页获取作品。");
+      if (payload.job_id) await pollFetchJob(payload.job_id);
+    } catch (requestError) {
+      setError(requestError.message || "创建获取任务失败，请稍后重试。");
+      setIsLoading(false);
+      setAccountTasks((currentTasks) =>
+        currentTasks.map((task) =>
+          loadingSecUids.has(task.secUid)
+            ? { ...task, status: "failed", message: requestError.message || "创建任务失败" }
+            : task,
+        ),
       );
-      const nextAccountTasks = accountTasks.map((task) => {
+    }
+  }
+
+  async function pollFetchJob(jobId) {
+    if (!jobId) return;
+    try {
+      const response = await fetch("/api/audit/fetch-jobs/" + encodeURIComponent(jobId));
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || "获取任务进度失败。");
+      }
+      const job = payload.job;
+      applyFetchJob(job);
+      if (["completed", "partial", "failed", "cancelled"].includes(job?.status)) {
+        setIsLoading(false);
+        if ((job?.videos || []).length > 0) {
+          await saveAuditRun("fetched", {
+            defaultRange: job.defaultRange || resultRange || { rangeType, startDate, endDate },
+            accountTasks,
+            accounts: job.accounts || [],
+            videos: normalizeFetchedVideos(job.videos || []),
+            auditResults,
+            manualReviews,
+            feedbacks,
+            auditSummary,
+            resultRange: job.defaultRange || resultRange,
+            totalFetched: (job.videos || []).length,
+            message: "账号作品已获取并保存为质检记录。",
+          });
+        }
+      }
+    } catch (error) {
+      setError(error.message || "读取获取任务失败。");
+      setIsLoading(false);
+    }
+  }
+
+  function applyFetchJob(job) {
+    if (!job) return;
+    const incomingVideos = normalizeFetchedVideos(job.videos || []);
+    const incomingAccounts = Array.isArray(job.accounts) ? job.accounts : [];
+    setFetchJobStatus(job.status || "");
+    setFetchJobProgress(job.progress || null);
+    setAccounts(incomingAccounts);
+    setVideos(incomingVideos);
+    setResultRange(job.defaultRange || null);
+    setTotalFetched(incomingVideos.length);
+    setResponseMessage(getFetchJobMessage(job));
+
+    const accountsBySecUid = new Map(
+      incomingAccounts.map((account) => [normalizeClientSecUid(account.secUid), account]),
+    );
+    setAccountTasks((currentTasks) =>
+      currentTasks.map((task) => {
         const account = accountsBySecUid.get(normalizeClientSecUid(task.secUid));
         if (!account) return task;
         return {
           ...task,
-          ...(account ? getProfileTaskFields(account) : {}),
-          status: account.status ?? "failed",
-          message:
-            account.message ||
-            (account
-              ? ""
-              : "?????????????? secUid ????????"),
+          ...getProfileTaskFields(account),
+          status: account.status === "running" ? "loading" : account.status || task.status,
+          message: account.message || "",
         };
-      });
-      const nextAuditResults = append ? auditResults : {};
-      const nextManualReviews = append ? manualReviews : {};
-      const nextFeedbacks = append ? feedbacks : {};
-      const nextAuditSummary = append ? auditSummary : null;
+      }),
+    );
+  }
 
-      setVideos(nextVideos);
-      setAccounts(nextAccounts);
-      setResultRange(nextResultRange);
-      setTotalFetched(nextTotalFetched);
-      setResponseMessage(payload?.message || "");
-      setAccountTasks(nextAccountTasks);
-      setAuditResults(nextAuditResults);
-      setManualReviews(nextManualReviews);
-      setFeedbacks(nextFeedbacks);
-      setAuditSummary(nextAuditSummary);
-
-      await saveAuditRun("fetched", {
-        defaultRange: nextResultRange,
-        accountTasks: nextAccountTasks,
-        accounts: nextAccounts,
-        videos: nextVideos,
-        auditResults: nextAuditResults,
-        manualReviews: nextManualReviews,
-        feedbacks: nextFeedbacks,
-        auditSummary: nextAuditSummary,
-        resultRange: nextResultRange,
-        totalFetched: nextTotalFetched,
-        message: append
-          ? "?????????????"
-          : "????????????????",
+  async function handleCancelFetchJob() {
+    if (!fetchJobId) return;
+    try {
+      const response = await fetch("/api/audit/fetch-jobs/" + encodeURIComponent(fetchJobId) + "/cancel", {
+        method: "POST",
       });
-    } catch (requestError) {
-      setError(requestError.message || "???????????????");
-      setAccountTasks((currentTasks) =>
-        currentTasks.map((task) =>
-          loadingSecUids.has(task.secUid)
-            ? {
-                ...task,
-                status: "failed",
-                message: requestError.message || "????",
-              }
-            : task,
-        ),
-      );
-    } finally {
+      const payload = await response.json().catch(() => null);
+      if (!response.ok || payload?.success === false) {
+        throw new Error(payload?.message || "取消获取任务失败。");
+      }
+      applyFetchJob(payload.job);
       setIsLoading(false);
+    } catch (error) {
+      setError(error.message || "取消获取任务失败。");
     }
   }
 
@@ -1688,7 +1732,7 @@ export default function DouyinAuditPage({ user }) {
         ];
       }),
     ];
-    const csv = `\uFEFF${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
+    const csv = `﻿${rows.map((row) => row.map(csvCell).join(",")).join("\n")}`;
     const url = URL.createObjectURL(
       new Blob([csv], { type: "text/csv;charset=utf-8" }),
     );
@@ -1727,10 +1771,10 @@ export default function DouyinAuditPage({ user }) {
     accounts: accounts.length,
     successAccounts: accounts.filter((account) => account.status === "success")
       .length,
-    partialAccounts: accounts.filter(
-      (account) =>
-        ["partial_success", "pending_retry"].includes(account.status),
-    ).length,
+    partialAccounts: accounts.filter((account) => account.status === "partial_success")
+      .length,
+    pendingRetryAccounts: accounts.filter((account) => account.status === "pending_retry")
+      .length,
     failedAccounts: accounts.filter((account) => account.status === "failed")
       .length,
     videos: videos.length,
@@ -1752,7 +1796,7 @@ export default function DouyinAuditPage({ user }) {
       ["partial_success", "pending_retry"].includes(account.status),
   );
   const retryableFetchAccounts = accounts.filter((account) =>
-    ["failed", "partial_success", "pending_retry"].includes(account.status),
+    ["partial_success", "pending_retry"].includes(account.status),
   );
   const querySummary = buildQuerySummary({
     accountCount: accountTasks.length || recognizedSecUids.length,
@@ -1778,7 +1822,7 @@ export default function DouyinAuditPage({ user }) {
     ),
   );
   const canStartAiAudit =
-    hasFetchedVideos && !isLoading && !isAuditing && !isRestoringRun;
+    hasFetchedVideos && !isAuditing && !isRestoringRun;
   const aiAuditButtonLabel = getAiAuditButtonLabel({
     isFetchingWorks: isLoading,
     isAuditing,
@@ -1896,10 +1940,10 @@ export default function DouyinAuditPage({ user }) {
       {partialFetchAccounts.length > 0 && (
         <div className="douyin-run-message neutral">
           <strong>
-            {"\u90e8\u5206\u8d26\u53f7\u83b7\u53d6\u4e0d\u5b8c\u6574\uff0c\u53ef\u5148\u8d28\u68c0\u5df2\u83b7\u53d6\u4f5c\u54c1\uff0c\u4e5f\u53ef\u4ee5\u7a0d\u540e\u91cd\u65b0\u83b7\u53d6\u8fd9\u4e9b\u8d26\u53f7\u3002"}
+            {"部分账号获取不完整，可先质检已获取作品，也可以稍后重新获取这些账号。"}
           </strong>
           <button type="button" onClick={retryProblemAccounts}>
-            {"\u91cd\u8bd5\u5931\u8d25/\u90e8\u5206\u8d26\u53f7"}
+            {"重试失败/部分账号"}
           </button>
         </div>
       )}
@@ -2246,8 +2290,33 @@ export default function DouyinAuditPage({ user }) {
 
           {partialFetchAccounts.length > 0 && (
             <div className="douyin-partial-fetch-note">
-              <strong>???????????</strong>
-              <span>????? {videos.length} ???????? AI ????????????????</span>
+              <strong>{"部分账号尚未完整获取。"}</strong>
+              <span>
+                {"已获取 "}
+                {videos.length}
+                {" 条作品。部分账号尚未完整获取，可点击“继续获取待重试账号”补充剩余作品，也可以先对已获取作品进行 AI 质检。"}
+              </span>
+            </div>
+          )}
+
+          {(isLoading || fetchJobProgress) && fetchJobId && (
+            <div className="douyin-partial-fetch-note">
+              <strong>{"正在获取账号作品"}</strong>
+              <span>
+                {"当前账号："}
+                {fetchJobProgress?.current_account_name || "-"}
+                {" · "}
+                {"账号进度："}
+                {fetchJobProgress?.current_account_index || 0}
+                {" / "}
+                {fetchJobProgress?.total_accounts || accountTasks.length || 0}
+                {" · offset："}
+                {fetchJobProgress?.current_offset || 0}
+                {" · "}
+                {"已获取："}
+                {videos.length}
+                {" 条"}
+              </span>
             </div>
           )}
 
@@ -2270,8 +2339,26 @@ export default function DouyinAuditPage({ user }) {
                 onClick={handleRetryPendingAccounts}
                 disabled={isLoading}
               >
-                ?????????
+                {"继续获取待重试账号"}
               </button>
+            )}
+            {fetchJobId && isLoading && (
+              <>
+                <button
+                  className="douyin-retry-fetch-button"
+                  type="button"
+                  onClick={() => pollFetchJob(fetchJobId)}
+                >
+                  {"刷新进度"}
+                </button>
+                <button
+                  className="douyin-retry-fetch-button"
+                  type="button"
+                  onClick={handleCancelFetchJob}
+                >
+                  {"取消获取"}
+                </button>
+              </>
             )}
             <button
               className="douyin-ai-audit-button"
@@ -2280,7 +2367,7 @@ export default function DouyinAuditPage({ user }) {
               disabled={!canStartAiAudit}
               title={
                 hasFetchedVideos
-                  ? ""
+                  ? "本次只会质检当前已获取的视频。"
                   : "请先获取账号作品后再开始 AI 质检。"
               }
             >
@@ -2298,8 +2385,8 @@ export default function DouyinAuditPage({ user }) {
           <div className="douyin-section-title">
             <div>
               <span className="card-kicker">TODAY WORKBENCH</span>
-              <h2>今日待处理</h2>
-              <p>展示当前登录用户今天需要处理的视频状态。</p>
+              <h2>{"今日待处理"}</h2>
+              <p>{"展示当前登录用户今天需要处理的视频状态。"}</p>
             </div>
           </div>
           <div className="today-workbench-grid">
@@ -2308,7 +2395,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-not-audited"
               onClick={() => jumpToWorkbench("not_audited")}
             >
-              <span>待AI质检</span>
+              <span>{"待 AI 质检"}</span>
               <strong>{todayWorkbench.notAudited}</strong>
             </button>
             <button
@@ -2316,7 +2403,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-pending"
               onClick={() => jumpToWorkbench("pending_review")}
             >
-              <span>待人工审核</span>
+              <span>{"待人工审核"}</span>
               <strong>{todayWorkbench.pendingReview}</strong>
             </button>
             <button
@@ -2324,7 +2411,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-rejected"
               onClick={() => jumpToWorkbench("rejected")}
             >
-              <span>退回修改</span>
+              <span>{"退回修改"}</span>
               <strong>{todayWorkbench.rejected}</strong>
             </button>
             <button
@@ -2332,7 +2419,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-failed"
               onClick={() => jumpToWorkbench("audit_failed")}
             >
-              <span>质检失败</span>
+              <span>{"质检失败"}</span>
               <strong>{todayWorkbench.auditFailed}</strong>
             </button>
             <button
@@ -2340,7 +2427,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-passed"
               onClick={() => jumpToWorkbench("publishable")}
             >
-              <span>今日已通过</span>
+              <span>{"今日已通过"}</span>
               <strong>{todayWorkbench.publishable}</strong>
             </button>
             <button
@@ -2348,7 +2435,7 @@ export default function DouyinAuditPage({ user }) {
               className="today-workbench-card status-handled"
               onClick={() => setActiveFilter("all")}
             >
-              <span>视频总数</span>
+              <span>{"全部视频"}</span>
               <strong>{todayWorkbench.total}</strong>
             </button>
           </div>
@@ -2359,13 +2446,13 @@ export default function DouyinAuditPage({ user }) {
         <section className={`douyin-overview-section task-detail-panel ${isTaskDetailsOpen ? "is-expanded" : "is-collapsed"}`}>
           <div className="douyin-section-title">
             <div>
-              <span className="card-kicker">02 / 统计概览</span>
-              <h2>本次质检工作台</h2>
+              <span className="card-kicker">{"02 / 统计概览"}</span>
+              <h2>{"本次质检工作台"}</h2>
             </div>
             {resultRange && (
               <span className="douyin-range-inline">
-                {getRangeLabel(resultRange.rangeType)} · {resultRange.startDate} 至{" "}
-                {resultRange.endDate}
+                {getRangeLabel(resultRange.rangeType)} {"·"} {resultRange.startDate}{" "}
+                {"至"} {resultRange.endDate}
               </span>
             )}
           </div>
@@ -2374,7 +2461,9 @@ export default function DouyinAuditPage({ user }) {
             className="task-detail-toggle"
             onClick={() => setIsTaskDetailsOpen((value) => !value)}
           >
-            {isTaskDetailsOpen ? "收起任务详情" : "查看任务详情"}
+            {isTaskDetailsOpen
+              ? "收起任务详情"
+              : "查看任务详情"}
           </button>
           <div className="douyin-overview-grid">
             <OverviewCard label="账号数" value={overview.accounts} />
@@ -2384,8 +2473,13 @@ export default function DouyinAuditPage({ user }) {
               tone="passed"
             />
             <OverviewCard
-              label="??????"
+              label="部分获取"
               value={overview.partialAccounts}
+              tone="human"
+            />
+            <OverviewCard
+              label="待重试"
+              value={overview.pendingRetryAccounts}
               tone="human"
             />
             <OverviewCard
@@ -4065,8 +4159,8 @@ function parseSecUids(value) {
 
 function normalizeClientSecUid(value) {
   return String(value ?? "")
-    .replace(/\u200B/gu, "")
-    .replace(/\uFEFF/gu, "")
+    .replace(/​/gu, "")
+    .replace(/﻿/gu, "")
     .trim();
 }
 
@@ -4157,6 +4251,32 @@ function mergeAccountsBySecUid(existingAccounts, incomingAccounts) {
   return [...merged.values()].sort(
     (left, right) => Number(left.account_index) - Number(right.account_index),
   );
+}
+
+function normalizeFetchedVideos(value) {
+  return Array.isArray(value)
+    ? value.map((video) => ({
+        ...video,
+        ai_audit_status: video.ai_audit_status || "not_started",
+        ai_audit_error: video.ai_audit_error || "",
+        ai_audit_last_at: video.ai_audit_last_at || "",
+      }))
+    : [];
+}
+
+function getFetchJobMessage(job) {
+  const count = Array.isArray(job?.videos) ? job.videos.length : 0;
+  if (!job) return "";
+  if (job.status === "pending") return "获取任务排队中。";
+  if (job.status === "running") {
+    return "正在获取账号作品，已获取 " + count + " 条。";
+  }
+  if (job.status === "partial") {
+    return "部分完成：已获取 " + count + " 条，部分账号获取不完整。";
+  }
+  if (job.status === "completed") return "获取完成：共 " + count + " 条作品。";
+  if (job.status === "cancelled") return "已取消获取任务。";
+  return job.error_message || "获取任务失败。";
 }
 
 function getVideoIdentityKey(video) {
@@ -4462,22 +4582,22 @@ function getAiAuditButtonLabel({
   isAuditing,
   hasFetchedVideos,
   hasUnauditedVideos,
-  videoCount = 0,
+  videoCount,
 }) {
-  if (isFetchingWorks) return "正在获取作品...";
   if (isAuditing) return "AI质检中...";
   if (!hasFetchedVideos) return "请先获取账号作品";
-  if (hasUnauditedVideos) return `开始 AI 质检（已获取 ${videoCount} 条）`;
-  return `重新 AI 质检（已获取 ${videoCount} 条）`;
+  if (isFetchingWorks) return "开始 AI 质检（已获取 " + videoCount + " 条）";
+  if (hasUnauditedVideos) return "开始 AI 质检（已获取 " + videoCount + " 条）";
+  return "重新 AI 质检（已获取 " + videoCount + " 条）";
 }
 
 function buildQuerySummary({ accountCount, rangeType, startDate, endDate, videoCount }) {
   const rangeLabel =
     rangeType === "custom"
-      ? `${startDate || "-"} 至 ${endDate || "-"}`
+      ? (startDate || "-") + " 至 " + (endDate || "-")
       : getRangeLabel(rangeType);
-  const videoText = videoCount > 0 ? ` · 共 ${videoCount} 条视频` : "";
-  return `已选择 ${accountCount || 0} 个账号 · ${rangeLabel}${videoText}`;
+  const videoText = videoCount > 0 ? " · 共 " + videoCount + " 条视频" : "";
+  return "已选择 " + (accountCount || 0) + " 个账号 · " + rangeLabel + videoText;
 }
 
 function buildProfileSummary(accountProfiles, accountProfileMeta) {
@@ -4485,7 +4605,16 @@ function buildProfileSummary(accountProfiles, accountProfileMeta) {
     return "还未上传质检名单，可手动输入 secUid，也可以先导入名单后批量选择账号。";
   }
 
-  return `已导入 ${accountProfiles.length} 个账号 · 可用 ${accountProfileMeta?.stats?.valid_uid_count ?? accountProfiles.length} · 缺失 ${accountProfileMeta?.stats?.missing_uid_count ?? 0} · 重复 ${accountProfileMeta?.stats?.duplicate_uid_count ?? 0}`;
+  return (
+    "已导入 " +
+    accountProfiles.length +
+    " 个账号 · 可用 " +
+    (accountProfileMeta?.stats?.valid_uid_count ?? accountProfiles.length) +
+    " · 缺失 " +
+    (accountProfileMeta?.stats?.missing_uid_count ?? 0) +
+    " · 重复 " +
+    (accountProfileMeta?.stats?.duplicate_uid_count ?? 0)
+  );
 }
 
 function buildCurrentRunStatus({
@@ -4498,30 +4627,41 @@ function buildCurrentRunStatus({
   auditProgress,
 }) {
   if (isFetchingWorks) {
-    return `正在获取作品 · 已识别 ${accountCount || 0} 个账号`;
+    return "正在获取作品 · 已识别 " + (accountCount || 0) + " 个账号";
   }
 
   if (isAuditing) {
-    return `AI 质检中：${auditProgress?.completed || 0} / ${
-      auditProgress?.total || videos.length || 0
-    }`;
+    return "AI 质检中：" + (auditProgress?.completed || 0) + " / " + (auditProgress?.total || videos.length || 0);
   }
 
   if ((videos || []).length === 0) {
     return accountCount > 0
-      ? `已识别 ${accountCount} 个账号，等待获取作品`
+      ? "已识别 " + accountCount + " 个账号，等待获取作品"
       : "";
   }
 
   const finalCounts = getFinalDecisionCounts(videos);
   if (finalCounts.not_audited === videos.length) {
-    return `已获取 ${videos.length} 条视频，待 AI 质检`;
+    return "已获取 " + videos.length + " 条视频，待 AI 质检";
   }
 
   const rangeLabel = resultRange
-    ? `${getRangeLabel(resultRange.rangeType)} · ${resultRange.startDate || "-"} 至 ${resultRange.endDate || "-"}`
+    ? getRangeLabel(resultRange.rangeType) + " · " + (resultRange.startDate || "-") + " 至 " + (resultRange.endDate || "-")
     : "未标注范围";
-  return `AI 质检完成：可发布 ${finalCounts.publishable}，待人工审核 ${finalCounts.pending_review}，失败 ${finalCounts.audit_failed} · 账号 ${accounts.length} · 视频 ${videos.length} · ${rangeLabel}`;
+  return (
+    "AI 质检完成：可发布 " +
+    finalCounts.publishable +
+    "，待人工审核 " +
+    finalCounts.pending_review +
+    "，失败 " +
+    finalCounts.audit_failed +
+    " · 账号 " +
+    accounts.length +
+    " · 视频 " +
+    videos.length +
+    " · " +
+    rangeLabel
+  );
 }
 
 function buildManualFallbackAuditResult(video) {
@@ -4593,9 +4733,8 @@ function buildPersistedRunSummary({
   return {
     account_count: accounts.length,
     success_account_count: accounts.filter((account) => account.status === "success").length,
-    partial_account_count: accounts.filter((account) =>
-      ["partial_success", "pending_retry"].includes(account.status),
-    ).length,
+    partial_account_count: accounts.filter((account) => account.status === "partial_success").length,
+    pending_retry_account_count: accounts.filter((account) => account.status === "pending_retry").length,
     failed_account_count: accounts.filter((account) => account.status === "failed").length,
     video_count: videos.length,
     total: videos.length,
@@ -5101,29 +5240,42 @@ function getTaskDisplayRange(task, defaultRange) {
 
 function getTaskStatusLabel(value) {
   return {
-    pending: "\u5f85\u83b7\u53d6",
-    loading: "\u83b7\u53d6\u4e2d",
-    success: "\u5df2\u5b8c\u6210",
-    partial_success: "\u90e8\u5206\u83b7\u53d6",
-    pending_retry: "\u5f85\u91cd\u8bd5",
-    failed: "\u5931\u8d25",
-  }[value] ?? "\u5f85\u83b7\u53d6";
+    pending: "待获取",
+    loading: "获取中",
+    success: "已完成",
+    partial_success: "部分获取",
+    pending_retry: "待重试",
+    failed: "失败",
+  }[value] ?? "待获取";
 }
 
 function getAccountFetchStatusText(account) {
+  if (!account) return "";
+  const count = Number(account.count) || 0;
+
   if (account.status === "success") {
-    return account.count + " \u6761";
+    return count + " 条";
   }
 
   if (account.status === "partial_success") {
-    return "\u90e8\u5206\u83b7\u53d6\uff1a" + (account.message || ("\u5df2\u83b7\u53d6 " + account.count + " \u6761"));
+    return (
+      "部分获取：" +
+      (account.message ||
+        ("已获取 " +
+          count +
+          " 条作品，因耗时较长已提前停止，结果可能不完整。"))
+    );
   }
 
   if (account.status === "pending_retry") {
-    return "\u5f85\u91cd\u8bd5\uff1a" + (account.message || "\u672c\u6b21\u6682\u672a\u5904\u7406");
+    return (
+      "待重试：" +
+      (account.message ||
+        "本次请求耗时较长，已暂停该账号。可点击“继续获取待重试账号”。")
+    );
   }
 
-  return "\u5931\u8d25\uff1a" + (account.message || "\u83b7\u53d6\u5931\u8d25");
+  return "失败：" + (account.message || "获取失败");
 }
 
 function shortSecUid(value) {

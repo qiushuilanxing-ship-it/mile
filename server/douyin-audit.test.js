@@ -124,8 +124,10 @@ test("does not limit mapped videos to 50 by default", () => {
 });
 
 test("normalizes invisible characters from secUid", () => {
+  const bom = String.fromCharCode(0xfeff);
+  const zeroWidthSpace = String.fromCharCode(0x200b);
   assert.equal(
-    normalizeSecUid("\uFEFF\u200B MS4wLjABAAAA-test \u200B"),
+    normalizeSecUid(`${bom}${zeroWidthSpace} MS4wLjABAAAA-test ${zeroWidthSpace}`),
     "MS4wLjABAAAA-test",
   );
 });
