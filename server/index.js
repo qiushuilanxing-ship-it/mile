@@ -118,6 +118,7 @@ const ACCOUNT_FETCH_BUDGET_MS = {
   custom: 240_000,
 };
 const RESPONSE_SOFT_BUDGET_MS = 105_000;
+const RESPONSE_SOFT_BUDGET_GUARD_MS = 8_000;
 const maxVideoSize = 100 * 1024 * 1024;
 const maxImageSize = 20 * 1024 * 1024;
 const configuredMaxImageCount = Number(process.env.MAX_IMAGE_COUNT);
@@ -751,6 +752,11 @@ app.post("/api/audit/douyin-account", async (request, response) => {
           requestStartedAt,
           collectedVideoCount: videos.length,
         })
+        ||
+        shouldAvoidStartingCrawlerPage({
+          requestStartedAt,
+          collectedVideoCount: videos.length,
+        })
       ) {
         requestStopReason = "time_budget_partial";
         requestPartial = true;
@@ -948,6 +954,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         pageTimeoutMs: CRAWLER_PAGE_TIMEOUT_MS,
         accountFetchBudgetMs: getAccountFetchBudgetMs(defaultRange.rangeType),
         responseSoftBudgetMs: RESPONSE_SOFT_BUDGET_MS,
+        responseSoftBudgetGuardMs: RESPONSE_SOFT_BUDGET_GUARD_MS,
         elapsedMs: Date.now() - requestStartedAt,
         accounts: accounts.map((account) => account.debug).filter(Boolean),
         pageCount: accounts.reduce(
@@ -1121,6 +1128,17 @@ async function fetchDouyinAccountVideos({
       break;
     }
 
+    if (
+      shouldAvoidStartingCrawlerPage({
+        requestStartedAt,
+        responseSoftBudgetMs,
+        collectedVideoCount: getCollectedVideoCount() + dateMatchedIds.size,
+      })
+    ) {
+      stopReason = "time_budget_partial";
+      break;
+    }
+
     if (totalElapsedBeforePage >= accountBudgetMs) {
       stopReason = dateMatchedIds.size > 0 ? "timeout_partial" : "crawler_timeout";
       break;
@@ -1201,9 +1219,11 @@ async function fetchDouyinAccountVideos({
           pageLimit,
           maxVideos,
           offset,
-          pageElapsedMs: Date.now() - pageStartedAt,
-          totalElapsedMs: Date.now() - startedAt,
-          pageFetchedCount: 0,
+        pageElapsedMs: Date.now() - pageStartedAt,
+        totalElapsedMs: Date.now() - startedAt,
+        requestElapsedMs: Date.now() - requestStartedAt,
+        responseSoftBudgetMs,
+        pageFetchedCount: 0,
           rawFetchedCount,
           dateMatchedCount: dateMatchedIds.size,
           dedupedCount: uniqueAwemes.size,
@@ -1237,13 +1257,7 @@ async function fetchDouyinAccountVideos({
         (aweme) => getCreateTimeSeconds(aweme) < range.startTime,
       );
 
-      if (dateMatchedIds.size >= maxVideos) {
-        stopReason = "reached_max_limit";
-      } else if (allPageVideosAreOlder) {
-        stopReason = "reached_start_date";
-      } else if (validatedAwemes.length < pageLimit) {
-        stopReason = "no_more_data";
-      } else if (
+      if (
         shouldStopForResponseBudget({
           requestStartedAt,
           responseSoftBudgetMs,
@@ -1251,6 +1265,12 @@ async function fetchDouyinAccountVideos({
         })
       ) {
         stopReason = "time_budget_partial";
+      } else if (dateMatchedIds.size >= maxVideos) {
+        stopReason = "reached_max_limit";
+      } else if (allPageVideosAreOlder) {
+        stopReason = "reached_start_date";
+      } else if (validatedAwemes.length < pageLimit) {
+        stopReason = "no_more_data";
       } else if (Date.now() - startedAt >= accountBudgetMs) {
         stopReason = dateMatchedIds.size > 0 ? "timeout_partial" : "crawler_timeout";
       } else {
@@ -1265,6 +1285,8 @@ async function fetchDouyinAccountVideos({
         offset,
         pageElapsedMs: Date.now() - pageStartedAt,
         totalElapsedMs: Date.now() - startedAt,
+        requestElapsedMs: Date.now() - requestStartedAt,
+        responseSoftBudgetMs,
         pageFetchedCount: validatedAwemes.length,
         rawFetchedCount,
         dateMatchedCount: dateMatchedIds.size,
@@ -1296,6 +1318,8 @@ async function fetchDouyinAccountVideos({
         offset,
         pageElapsedMs: Date.now() - pageStartedAt,
         totalElapsedMs: Date.now() - startedAt,
+        requestElapsedMs: Date.now() - requestStartedAt,
+        responseSoftBudgetMs,
         pageFetchedCount: pageAwemes.length,
         rawFetchedCount,
         dateMatchedCount: dateMatchedIds.size,
@@ -1338,6 +1362,8 @@ async function fetchDouyinAccountVideos({
     dedupedCount: uniqueAwemes.size,
     returnedCount: accountVideos.length,
     elapsedMs,
+    requestElapsedMs: Date.now() - requestStartedAt,
+    responseSoftBudgetMs,
     stopReason: stopReason === "continue" ? "no_more_data" : stopReason,
     partial,
   };
@@ -1424,6 +1450,19 @@ function shouldStopForResponseBudget({
   );
 }
 
+function shouldAvoidStartingCrawlerPage({
+  requestStartedAt,
+  responseSoftBudgetMs = RESPONSE_SOFT_BUDGET_MS,
+  collectedVideoCount = 0,
+}) {
+  return (
+    Number.isFinite(requestStartedAt) &&
+    collectedVideoCount > 0 &&
+    Date.now() - requestStartedAt >=
+      responseSoftBudgetMs - RESPONSE_SOFT_BUDGET_GUARD_MS
+  );
+}
+
 function buildPendingRetryAccounts({
   accountTasks,
   startIndex,
@@ -1490,6 +1529,8 @@ function logDouyinAccountFetchPage({
   offset,
   pageElapsedMs,
   totalElapsedMs,
+  requestElapsedMs,
+  responseSoftBudgetMs,
   pageFetchedCount,
   rawFetchedCount,
   dateMatchedCount,
@@ -1510,6 +1551,8 @@ function logDouyinAccountFetchPage({
     offset,
     pageElapsedMs,
     totalElapsedMs,
+    requestElapsedMs,
+    responseSoftBudgetMs,
     pageFetchedCount,
     rawFetchedCount,
     dateMatchedCount,
