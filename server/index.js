@@ -766,7 +766,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
             startIndex: accountIndex,
             defaultRange,
             message:
-              "\u672a\u7ee7\u7eed\u5904\u7406\uff1a\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5",
+              "\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u5df2\u6682\u505c\u8be5\u8d26\u53f7\u3002\u53ef\u70b9\u51fb\u201c\u7ee7\u7eed\u83b7\u53d6\u5f85\u91cd\u8bd5\u8d26\u53f7\u201d\u3002",
           }),
         );
         break;
@@ -834,7 +834,7 @@ app.post("/api/audit/douyin-account", async (request, response) => {
                 startIndex: accountIndex + 1,
                 defaultRange,
                 message:
-                  "\u672a\u7ee7\u7eed\u5904\u7406\uff1a\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5",
+                  "\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u5df2\u6682\u505c\u8be5\u8d26\u53f7\u3002\u53ef\u70b9\u51fb\u201c\u7ee7\u7eed\u83b7\u53d6\u5f85\u91cd\u8bd5\u8d26\u53f7\u201d\u3002",
               }),
             );
           }
@@ -934,6 +934,9 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         partial_count: accounts.filter(
           (account) =>
             ["partial_success", "pending_retry"].includes(account.status),
+        ).length,
+        pending_retry_count: accounts.filter(
+          (account) => account.status === "pending_retry",
         ).length,
         total_videos: videos.length,
       },

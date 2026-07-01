@@ -3836,6 +3836,16 @@ textarea:focus {
   background: #eaf6e4;
 }
 
+.douyin-task-status.partial_success {
+  color: #946000;
+  background: #fff1cc;
+}
+
+.douyin-task-status.pending_retry {
+  color: #5f4fd6;
+  background: #f0edff;
+}
+
 .douyin-task-status.failed {
   color: #a04137;
   background: #ffe8e4;
@@ -3851,13 +3861,56 @@ textarea:focus {
 
 .douyin-query-actions {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 10px;
 }
 
 .douyin-query-actions .douyin-ai-audit-button {
   height: 52px;
   border-radius: 13px;
+}
+
+.douyin-retry-fetch-button {
+  min-height: 52px;
+  padding: 0 16px;
+  border: 1px solid #ffd8a8;
+  border-radius: 13px;
+  color: #9a5a00;
+  background: #fff8ec;
+  font-size: 13px;
+  font-weight: 900;
+  cursor: pointer;
+}
+
+.douyin-retry-fetch-button:hover:not(:disabled) {
+  border-color: #f6b44b;
+  background: #fff1d7;
+}
+
+.douyin-retry-fetch-button:disabled {
+  color: #a9a1a0;
+  background: #f3f1f7;
+  cursor: not-allowed;
+}
+
+.douyin-partial-fetch-note {
+  display: flex;
+  grid-column: 1 / -1;
+  margin-top: 14px;
+  padding: 12px 14px;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  border: 1px solid #ffd8a8;
+  border-radius: 13px;
+  color: #8a5200;
+  background: #fff8ec;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.douyin-partial-fetch-note strong {
+  color: #744500;
 }
 
 .douyin-audit-test-control {
