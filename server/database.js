@@ -66,9 +66,30 @@ function initializeDatabase() {
       accounts_json TEXT NOT NULL DEFAULT '[]',
       videos_json TEXT NOT NULL DEFAULT '[]',
       audit_results_json TEXT NOT NULL DEFAULT '{}',
+      manual_reviews_json TEXT NOT NULL DEFAULT '{}',
+      feedbacks_json TEXT NOT NULL DEFAULT '{}',
       summary_json TEXT NOT NULL DEFAULT '{}',
       status TEXT NOT NULL DEFAULT 'pending',
       note TEXT NOT NULL DEFAULT ''
+    );
+
+    CREATE TABLE IF NOT EXISTS audit_rules (
+      id TEXT PRIMARY KEY,
+      title TEXT NOT NULL,
+      category TEXT,
+      risk_level TEXT,
+      decision TEXT,
+      keywords_json TEXT NOT NULL DEFAULT '[]',
+      description TEXT,
+      positive_examples_json TEXT NOT NULL DEFAULT '[]',
+      negative_examples_json TEXT NOT NULL DEFAULT '[]',
+      suggested_action TEXT,
+      enabled INTEGER NOT NULL DEFAULT 1,
+      source_sample_id TEXT,
+      created_by TEXT,
+      created_by_name TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
     );
   `);
 
@@ -77,6 +98,7 @@ function initializeDatabase() {
   disableUnsafeDefaultUsers();
   migrateAiLogs();
   migrateAuditRuns();
+  migrateAuditRules();
   removeLegacyPromptStorage();
 
   database.exec(`
@@ -104,6 +126,12 @@ function initializeDatabase() {
 
     CREATE INDEX IF NOT EXISTS idx_audit_runs_user_updated
       ON audit_runs(created_by, updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_audit_rules_updated
+      ON audit_rules(updated_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_audit_rules_enabled_updated
+      ON audit_rules(enabled, updated_at DESC);
   `);
 
   database
@@ -252,6 +280,45 @@ function migrateAuditRuns() {
     database.exec(
       "ALTER TABLE audit_runs ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''",
     );
+  }
+
+  if (!columnNames.includes("manual_reviews_json")) {
+    database.exec(
+      "ALTER TABLE audit_runs ADD COLUMN manual_reviews_json TEXT NOT NULL DEFAULT '{}'",
+    );
+  }
+
+  if (!columnNames.includes("feedbacks_json")) {
+    database.exec(
+      "ALTER TABLE audit_runs ADD COLUMN feedbacks_json TEXT NOT NULL DEFAULT '{}'",
+    );
+  }
+}
+
+function migrateAuditRules() {
+  const columns = database.prepare("PRAGMA table_info(audit_rules)").all();
+  const columnNames = columns.map((column) => column.name);
+  const requiredColumns = [
+    ["category", "TEXT"],
+    ["risk_level", "TEXT"],
+    ["decision", "TEXT"],
+    ["keywords_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["description", "TEXT"],
+    ["positive_examples_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["negative_examples_json", "TEXT NOT NULL DEFAULT '[]'"],
+    ["suggested_action", "TEXT"],
+    ["enabled", "INTEGER NOT NULL DEFAULT 1"],
+    ["source_sample_id", "TEXT"],
+    ["created_by", "TEXT"],
+    ["created_by_name", "TEXT"],
+    ["created_at", "TEXT NOT NULL DEFAULT ''"],
+    ["updated_at", "TEXT NOT NULL DEFAULT ''"],
+  ];
+
+  for (const [name, definition] of requiredColumns) {
+    if (!columnNames.includes(name)) {
+      database.exec(`ALTER TABLE audit_rules ADD COLUMN ${name} ${definition}`);
+    }
   }
 }
 
@@ -671,6 +738,8 @@ export function upsertAuditRun({
   accounts = [],
   videos = [],
   auditResults = {},
+  manualReviews = {},
+  feedbacks = {},
   summary = {},
   status = "pending",
   note = "",
@@ -706,6 +775,8 @@ export function upsertAuditRun({
     accounts_json: stringifyJson(accounts, []),
     videos_json: stringifyJson(videos, []),
     audit_results_json: stringifyJson(auditResults, {}),
+    manual_reviews_json: stringifyJson(manualReviews, {}),
+    feedbacks_json: stringifyJson(feedbacks, {}),
     summary_json: stringifyJson(summary, {}),
     status: normalizeAuditRunStatus(status),
     note: cleanText(note),
@@ -732,6 +803,8 @@ export function upsertAuditRun({
             accounts_json = @accounts_json,
             videos_json = @videos_json,
             audit_results_json = @audit_results_json,
+            manual_reviews_json = @manual_reviews_json,
+            feedbacks_json = @feedbacks_json,
             summary_json = @summary_json,
             status = @status,
             note = @note
@@ -743,11 +816,11 @@ export function upsertAuditRun({
       .prepare(`
         INSERT INTO audit_runs
           (id, title, created_at, updated_at, created_by, created_by_name, default_range_json,
-           account_tasks_json, accounts_json, videos_json, audit_results_json,
+           account_tasks_json, accounts_json, videos_json, audit_results_json, manual_reviews_json, feedbacks_json,
            summary_json, status, note)
         VALUES
           (@id, @title, @created_at, @updated_at, @created_by, @created_by_name, @default_range_json,
-           @account_tasks_json, @accounts_json, @videos_json, @audit_results_json,
+           @account_tasks_json, @accounts_json, @videos_json, @audit_results_json, @manual_reviews_json, @feedbacks_json,
            @summary_json, @status, @note)
       `)
       .run(record);
@@ -832,6 +905,325 @@ export function deleteAuditRun({ id, createdBy, canDeleteAll = false }) {
   return result.changes > 0;
 }
 
+export function listFeedbackSamples({
+  createdBy,
+  allUsers = false,
+  type = "all",
+  limit = 100,
+} = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const allowedTypes = new Set([
+    "correct",
+    "false_positive",
+    "false_negative",
+    "rule_gap",
+    "uncertain",
+  ]);
+  const filterType = allowedTypes.has(type) ? type : "all";
+  const whereClause = allUsers ? "" : "WHERE created_by = ?";
+  const parameters = allUsers ? [] : [String(createdBy)];
+  const rows = database
+    .prepare(`
+      SELECT id, title, created_at, updated_at, created_by, created_by_name,
+             videos_json, audit_results_json, manual_reviews_json, feedbacks_json
+      FROM audit_runs
+      ${whereClause}
+      ORDER BY updated_at DESC, created_at DESC
+      LIMIT 500
+    `)
+    .all(...parameters);
+  const samples = [];
+  const summary = {
+    total: 0,
+    correct: 0,
+    false_positive: 0,
+    false_negative: 0,
+    rule_gap: 0,
+    uncertain: 0,
+  };
+
+  for (const row of rows) {
+    const videos = parseJsonValue(row.videos_json, []);
+    const auditResults = parseJsonValue(row.audit_results_json, {});
+    const manualReviews = parseJsonValue(row.manual_reviews_json, {});
+    const feedbacks = parseJsonValue(row.feedbacks_json, {});
+    const videoMap = new Map(
+      Array.isArray(videos)
+        ? videos.map((video) => [video.video_id, video])
+        : [],
+    );
+
+    for (const [videoId, feedback] of Object.entries(feedbacks || {})) {
+      if (!feedback?.type) continue;
+      if (Object.hasOwn(summary, feedback.type)) {
+        summary[feedback.type] += 1;
+      }
+      summary.total += 1;
+
+      if (filterType !== "all" && feedback.type !== filterType) continue;
+
+      const video = videoMap.get(videoId) || {};
+      const aiResult = auditResults?.[videoId] || {};
+      const manualReview = manualReviews?.[videoId] || {};
+      samples.push({
+        run_id: row.id,
+        run_title: row.title,
+        video_id: videoId,
+        video_url: video.page_url || "",
+        cover_url: video.cover_url || "",
+        desc: video.desc || "",
+        author_name: video.author_name || "",
+        account_name: video.frontend_name || video.author_name || "",
+        erp_name: video.erp_name || "",
+        douyin_id: video.douyin_id || "",
+        sec_uid: video.secUid || "",
+        create_time: video.create_time || "",
+        ai_result: aiResult.audit_result || "",
+        ai_risk_level: aiResult.risk_level || "",
+        ai_problem:
+          Array.isArray(aiResult.main_risks) && aiResult.main_risks.length > 0
+            ? aiResult.main_risks.join("；")
+            : aiResult.problem_description || "",
+        manual_status: manualReview.status || "",
+        manual_note: manualReview.note || "",
+        feedback_type: feedback.type || "",
+        feedback_note: feedback.note || "",
+        suggested_rule: feedback.suggested_rule || "",
+        feedback_by: feedback.feedback_by || "",
+        feedback_by_name: feedback.feedback_by_name || "",
+        feedback_at: feedback.feedback_at || "",
+        created_by: cleanText(row.created_by),
+        created_by_name: cleanText(row.created_by_name) || "未知创建人",
+      });
+
+      if (samples.length >= safeLimit) return { samples, summary };
+    }
+  }
+
+  return { samples, summary };
+}
+
+export function listAuditRules({
+  enabled = "1",
+  category = "",
+  keyword = "",
+  limit = 100,
+} = {}) {
+  const safeLimit = Math.min(Math.max(Number(limit) || 100, 1), 500);
+  const where = [];
+  const params = {};
+
+  if (enabled !== "all") {
+    where.push("enabled = @enabled");
+    params.enabled = String(enabled) === "0" ? 0 : 1;
+  }
+
+  if (cleanText(category)) {
+    where.push("category = @category");
+    params.category = cleanText(category);
+  }
+
+  if (cleanText(keyword)) {
+    where.push(`(
+      title LIKE @keyword OR
+      category LIKE @keyword OR
+      description LIKE @keyword OR
+      keywords_json LIKE @keyword OR
+      suggested_action LIKE @keyword
+    )`);
+    params.keyword = `%${cleanText(keyword)}%`;
+  }
+
+  params.limit = safeLimit;
+
+  const rows = database
+    .prepare(`
+      SELECT *
+      FROM audit_rules
+      ${where.length > 0 ? `WHERE ${where.join(" AND ")}` : ""}
+      ORDER BY enabled DESC, updated_at DESC
+      LIMIT @limit
+    `)
+    .all(params);
+
+  return rows.map(normalizeAuditRule);
+}
+
+export function listEnabledAuditRules({ limit = 200 } = {}) {
+  return listAuditRules({ enabled: "1", limit });
+}
+
+export function getAuditRule(id) {
+  const row = database
+    .prepare("SELECT * FROM audit_rules WHERE id = ?")
+    .get(String(id ?? ""));
+
+  return row ? normalizeAuditRule(row) : null;
+}
+
+export function createAuditRule(payload, user) {
+  const now = new Date().toISOString();
+  const rule = normalizeAuditRuleInput(payload);
+
+  if (!rule.title) {
+    const error = new Error("请填写规则名称");
+    error.code = "AUDIT_RULE_TITLE_REQUIRED";
+    throw error;
+  }
+
+  if (!rule.category) {
+    const error = new Error("请选择规则分类");
+    error.code = "AUDIT_RULE_CATEGORY_REQUIRED";
+    throw error;
+  }
+
+  if (!rule.description) {
+    const error = new Error("请填写规则说明");
+    error.code = "AUDIT_RULE_DESCRIPTION_REQUIRED";
+    throw error;
+  }
+
+  const id = crypto.randomUUID();
+  database
+    .prepare(`
+      INSERT INTO audit_rules
+        (id, title, category, risk_level, decision, keywords_json, description,
+         positive_examples_json, negative_examples_json, suggested_action, enabled,
+         source_sample_id, created_by, created_by_name, created_at, updated_at)
+      VALUES
+        (@id, @title, @category, @risk_level, @decision, @keywords_json, @description,
+         @positive_examples_json, @negative_examples_json, @suggested_action, @enabled,
+         @source_sample_id, @created_by, @created_by_name, @created_at, @updated_at)
+    `)
+    .run({
+      id,
+      ...toAuditRuleDbFields(rule),
+      created_by: cleanText(user?.id),
+      created_by_name: cleanText(user?.name || user?.username),
+      created_at: now,
+      updated_at: now,
+    });
+
+  return getAuditRule(id);
+}
+
+export function updateAuditRule(id, payload) {
+  const existing = getAuditRule(id);
+
+  if (!existing) return null;
+
+  const rule = normalizeAuditRuleInput({ ...existing, ...payload });
+
+  if (!rule.title || !rule.category || !rule.description) {
+    const error = new Error("规则名称、分类和说明不能为空");
+    error.code = "AUDIT_RULE_REQUIRED_FIELDS";
+    throw error;
+  }
+
+  database
+    .prepare(`
+      UPDATE audit_rules
+      SET title = @title,
+          category = @category,
+          risk_level = @risk_level,
+          decision = @decision,
+          keywords_json = @keywords_json,
+          description = @description,
+          positive_examples_json = @positive_examples_json,
+          negative_examples_json = @negative_examples_json,
+          suggested_action = @suggested_action,
+          enabled = @enabled,
+          source_sample_id = @source_sample_id,
+          updated_at = @updated_at
+      WHERE id = @id
+    `)
+    .run({
+      id: String(id),
+      ...toAuditRuleDbFields(rule),
+      updated_at: new Date().toISOString(),
+    });
+
+  return getAuditRule(id);
+}
+
+export function toggleAuditRule(id, enabled) {
+  const existing = getAuditRule(id);
+
+  if (!existing) return null;
+
+  database
+    .prepare(
+      "UPDATE audit_rules SET enabled = ?, updated_at = ? WHERE id = ?",
+    )
+    .run(enabled ? 1 : 0, new Date().toISOString(), String(id));
+
+  return getAuditRule(id);
+}
+
+export function deleteAuditRule(id) {
+  const result = database
+    .prepare("DELETE FROM audit_rules WHERE id = ?")
+    .run(String(id ?? ""));
+
+  return result.changes > 0;
+}
+
+function normalizeAuditRule(row) {
+  return {
+    id: cleanText(row.id),
+    title: cleanText(row.title),
+    category: cleanText(row.category),
+    risk_level: cleanText(row.risk_level) || "中",
+    decision: cleanText(row.decision) || "建议人工审核",
+    keywords: parseJsonValue(row.keywords_json, []),
+    description: cleanText(row.description),
+    positive_examples: parseJsonValue(row.positive_examples_json, []),
+    negative_examples: parseJsonValue(row.negative_examples_json, []),
+    suggested_action: cleanText(row.suggested_action),
+    enabled: Number(row.enabled) === 1,
+    source_sample_id: cleanText(row.source_sample_id),
+    created_by: cleanText(row.created_by),
+    created_by_name: cleanText(row.created_by_name) || "未知创建人",
+    created_at: cleanText(row.created_at),
+    updated_at: cleanText(row.updated_at),
+  };
+}
+
+function normalizeAuditRuleInput(value = {}) {
+  return {
+    title: cleanText(value.title).slice(0, 120),
+    category: cleanText(value.category).slice(0, 60),
+    risk_level: ["无", "低", "中", "高"].includes(value.risk_level)
+      ? value.risk_level
+      : "中",
+    decision:
+      value.decision === "通过" ? "通过" : "建议人工审核",
+    keywords: normalizeStringList(value.keywords, 30, 40),
+    description: cleanText(value.description).slice(0, 3000),
+    positive_examples: normalizeStringList(value.positive_examples, 20, 300),
+    negative_examples: normalizeStringList(value.negative_examples, 20, 300),
+    suggested_action: cleanText(value.suggested_action).slice(0, 1000),
+    enabled: value.enabled === false || value.enabled === 0 ? false : true,
+    source_sample_id: cleanText(value.source_sample_id).slice(0, 200),
+  };
+}
+
+function toAuditRuleDbFields(rule) {
+  return {
+    title: rule.title,
+    category: rule.category,
+    risk_level: rule.risk_level,
+    decision: rule.decision,
+    keywords_json: stringifyJson(rule.keywords, []),
+    description: rule.description,
+    positive_examples_json: stringifyJson(rule.positive_examples, []),
+    negative_examples_json: stringifyJson(rule.negative_examples, []),
+    suggested_action: rule.suggested_action,
+    enabled: rule.enabled ? 1 : 0,
+    source_sample_id: rule.source_sample_id,
+  };
+}
+
 function normalizeUser(user) {
   return {
     id: user.id,
@@ -886,6 +1278,8 @@ function normalizeAuditRun(row, includePayload) {
           accounts,
           videos,
           auditResults: parseJsonValue(row.audit_results_json, {}),
+          manualReviews: parseJsonValue(row.manual_reviews_json, {}),
+          feedbacks: parseJsonValue(row.feedbacks_json, {}),
         }
       : {}),
   };
@@ -922,6 +1316,26 @@ function defaultAuditRunTitle(isoDate) {
 
 function cleanText(value) {
   return String(value ?? "").trim();
+}
+
+function normalizeStringList(value, maxItems, maxLength) {
+  const list = Array.isArray(value)
+    ? value
+    : String(value ?? "")
+        .split(/[\n,，、]/u)
+        .map((item) => item.trim());
+  const seen = new Set();
+  const result = [];
+
+  for (const item of list) {
+    const text = cleanText(item).slice(0, maxLength);
+    if (!text || seen.has(text)) continue;
+    seen.add(text);
+    result.push(text);
+    if (result.length >= maxItems) break;
+  }
+
+  return result;
 }
 
 export function closeDatabase() {

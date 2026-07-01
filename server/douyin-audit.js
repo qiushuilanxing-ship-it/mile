@@ -65,7 +65,7 @@ export function buildDouyinVideos(
   {
     startTime = 0,
     endTime = Number.POSITIVE_INFINITY,
-    limit = 50,
+    limit = Number.POSITIVE_INFINITY,
   } = {},
 ) {
   const uniqueAwemes = new Map();
@@ -133,8 +133,8 @@ export function resolveDouyinRange(
   let normalizedEndDate;
 
   if (normalizedRangeType === "custom") {
-    normalizedStartDate = validateDateString(startDate, "开始日期");
-    normalizedEndDate = validateDateString(endDate, "结束日期");
+    normalizedStartDate = validateDateString(startDate, "startDate");
+    normalizedEndDate = validateDateString(endDate, "endDate");
   } else if (Object.hasOwn(presetDays, normalizedRangeType)) {
     normalizedEndDate = formatBeijingDate(now);
     normalizedStartDate = addCalendarDays(
@@ -142,11 +142,11 @@ export function resolveDouyinRange(
       -presetDays[normalizedRangeType],
     );
   } else {
-    throw new DouyinRangeError("时间范围类型不正确。");
+    throw new DouyinRangeError("date_parse_error: unsupported rangeType");
   }
 
   if (normalizedStartDate > normalizedEndDate) {
-    throw new DouyinRangeError("开始日期不能晚于结束日期。");
+    throw new DouyinRangeError("date_parse_error: startDate is after endDate");
   }
 
   return {
@@ -196,22 +196,64 @@ function addCalendarDays(dateString, days) {
 }
 
 function validateDateString(value, label) {
-  const dateString = cleanText(value);
+  const dateString = parseDateInput(value);
 
-  if (!/^\d{4}-\d{2}-\d{2}$/u.test(dateString)) {
-    throw new DouyinRangeError(`请填写有效的${label}。`);
-  }
-
-  const [year, month, day] = dateString.split("-").map(Number);
-  const normalized = new Date(Date.UTC(year, month - 1, day))
-    .toISOString()
-    .slice(0, 10);
-
-  if (normalized !== dateString) {
-    throw new DouyinRangeError(`请填写有效的${label}。`);
+  if (!dateString) {
+    throw new DouyinRangeError(`date_parse_error: invalid ${label}`);
   }
 
   return dateString;
+}
+
+export function parseDateInput(value) {
+  const dateString = cleanText(value);
+  let year;
+  let month;
+  let day;
+
+  if (/^\d{4}-\d{2}-\d{2}$/u.test(dateString)) {
+    [year, month, day] = dateString.split("-").map(Number);
+  } else {
+    const slashMatch = dateString.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/u);
+
+    if (!slashMatch) {
+      return "";
+    }
+
+    month = Number(slashMatch[1]);
+    day = Number(slashMatch[2]);
+    year = Number(slashMatch[3]);
+  }
+
+  if (
+    !Number.isInteger(year) ||
+    !Number.isInteger(month) ||
+    !Number.isInteger(day) ||
+    year < 1970 ||
+    month < 1 ||
+    month > 12 ||
+    day < 1 ||
+    day > 31
+  ) {
+    return "";
+  }
+
+  const normalized = new Date(Date.UTC(year, month - 1, day))
+    .toISOString()
+    .slice(0, 10);
+  const [normalizedYear, normalizedMonth, normalizedDay] = normalized
+    .split("-")
+    .map(Number);
+
+  if (
+    normalizedYear !== year ||
+    normalizedMonth !== month ||
+    normalizedDay !== day
+  ) {
+    return "";
+  }
+
+  return normalized;
 }
 
 function dateToBeijingTimestamp(dateString, endOfDay = false) {

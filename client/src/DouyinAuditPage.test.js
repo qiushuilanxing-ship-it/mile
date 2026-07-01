@@ -32,8 +32,11 @@ test("maps old rectification and high-risk model outputs into human review", () 
   }
 });
 
-test("counts only all, human review, passed, and failed categories", () => {
+test("counts not audited videos separately from failed videos", () => {
   const counts = getFilterCounts([
+    {
+      ai_audit_status: "not_started",
+    },
     {
       auditResult: {
         audit_result: "通过",
@@ -64,8 +67,10 @@ test("counts only all, human review, passed, and failed categories", () => {
   ]);
 
   assert.deepEqual(counts, {
-    all: 4,
+    all: 5,
+    notAudited: 1,
     human: 2,
+    rejected: 0,
     passed: 1,
     failed: 1,
   });

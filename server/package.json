@@ -8,7 +8,9 @@
     "start": "node index.js",
     "test": "node --test",
     "acceptance": "node acceptance-check.js",
-    "build:quality-rules": "node scripts/build-quality-rules.js"
+    "build:quality-rules": "node scripts/build-quality-rules.js",
+    "auth:check": "node scripts/check-auth-config.js",
+    "auth:reset-admin": "node scripts/reset-admin-password.js"
   },
   "engines": {
     "node": ">=18"

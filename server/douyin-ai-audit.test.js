@@ -4,7 +4,9 @@ import {
   AiAuditInputError,
   auditDouyinVideosWithModel,
   buildAuditItems,
+  buildNormalizedContentKey,
   matchRulesForDescription,
+  normalizeComparableContent,
   normalizeAuditResults,
   prepareAuditVideos,
 } from "./douyin-ai-audit.js";
@@ -48,6 +50,8 @@ test("validates and sanitizes audit videos", () => {
         create_time_ts: 1_782_279_200,
         duration: 15_000,
         desc: "测试描述",
+        ocr_text: "",
+        subtitle_text: "",
         page_url: "https://example.com",
         cover_url: "https://example.com/cover.jpg",
         play_url: "https://example.com/video.mp4",
@@ -69,6 +73,8 @@ test("validates and sanitizes audit videos", () => {
         business_status: "",
         live_status: "",
         profile_matched: false,
+        ocr_text: "",
+        subtitle_text: "",
         create_time: "2026-06-24 12:00:00",
         create_time_ts: 1_782_279_200,
         duration: 15_000,
@@ -112,6 +118,28 @@ test("builds model audit items with matched rules", () => {
   );
 
   assert.equal(items[0].matched_rules[0].rule_id, "R-001");
+  assert.equal(items[0].source_video_id, "video-1");
+  assert.ok(items[0].normalized_content_key);
+});
+
+test("normalizes similar content into a stable comparable key", () => {
+  const first = buildNormalizedContentKey(
+    {
+      desc: "#活动 直播间福利 到手价 4999 2026-06-24 12:00",
+      author_name: "账号A",
+    },
+    [{ rule_name: "直播间福利表达规范" }],
+  );
+  const second = buildNormalizedContentKey(
+    {
+      desc: "直播间福利，到手价4999",
+      author_name: "账号A",
+    },
+    [{ rule_name: "直播间福利表达规范" }],
+  );
+
+  assert.equal(first, second);
+  assert.equal(normalizeComparableContent("A #tag， 测试！"), "a测试");
 });
 
 test("normalizes model results and rejects hallucinated rule ids", () => {

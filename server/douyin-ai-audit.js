@@ -75,6 +75,14 @@ export function prepareAuditVideos(videos) {
       create_time_ts: Number(video?.create_time_ts) || 0,
       duration: Number(video?.duration) || 0,
       desc: clean(video?.desc).slice(0, 5000),
+      ocr_text: clean(video?.ocr_text ?? video?.ocrText ?? video?.subtitle_text).slice(
+        0,
+        5000,
+      ),
+      subtitle_text: clean(video?.subtitle_text ?? video?.subtitleText).slice(
+        0,
+        5000,
+      ),
       page_url: clean(video?.page_url),
       cover_url: clean(video?.cover_url),
       play_url: clean(video?.play_url),
@@ -118,11 +126,169 @@ export function matchRulesForDescription(description, rules) {
     .slice(0, 20);
 }
 
-export function buildAuditItems(videos, rules) {
-  return videos.map((video) => ({
-    ...video,
-    matched_rules: matchRulesForDescription(video.desc, rules),
-  }));
+export function selectManagedRulesForVideo(video, rules) {
+  const enabledRules = Array.isArray(rules)
+    ? rules.filter((rule) => rule?.enabled !== false)
+    : [];
+  const searchableText = [
+    video?.desc,
+    video?.author_name,
+    video?.frontend_name,
+    video?.erp_name,
+    video?.douyin_id,
+  ]
+    .map((value) => clean(value).toLowerCase())
+    .filter(Boolean)
+    .join(" ");
+
+  const matched = enabledRules
+    .map((rule) => {
+      const keywords = Array.isArray(rule.keywords) ? rule.keywords : [];
+      const matchedKeywords = keywords.filter((keyword) =>
+        searchableText.includes(clean(keyword).toLowerCase()),
+      );
+
+      if (matchedKeywords.length === 0) return null;
+      return normalizeManagedRule(rule, matchedKeywords);
+    })
+    .filter(Boolean);
+
+  if (matched.length > 0) {
+    return matched.slice(0, 10);
+  }
+
+  return enabledRules.slice(0, 10).map((rule) => normalizeManagedRule(rule, []));
+}
+
+function normalizeManagedRule(rule, matchedKeywords) {
+  return {
+    rule_id: clean(rule.id || rule.rule_id),
+    rule_name: clean(rule.title || rule.rule_name),
+    category: clean(rule.category),
+    sub_category: "",
+    risk_level: clean(rule.risk_level),
+    matched_keywords: matchedKeywords,
+    keywords: Array.isArray(rule.keywords) ? rule.keywords : [],
+    standard: clean(rule.description),
+    risk_reason: clean(rule.decision),
+    rectification: clean(rule.suggested_action),
+    decision: clean(rule.decision),
+    source: "audit_rules",
+  };
+}
+
+function mergeMatchedRules(...groups) {
+  const seen = new Set();
+  const result = [];
+
+  for (const group of groups) {
+    for (const rule of Array.isArray(group) ? group : []) {
+      const key = clean(rule.rule_id || rule.rule_name);
+      if (!key || seen.has(key)) continue;
+      seen.add(key);
+      result.push(rule);
+    }
+  }
+
+  return result;
+}
+
+export function buildAuditItems(videos, rules, managedRules = []) {
+  return videos.map((video) => {
+    const legacyRules = matchRulesForDescription(video.desc, rules);
+    const selectedManagedRules = selectManagedRulesForVideo(video, managedRules);
+    const matchedRules = mergeMatchedRules(legacyRules, selectedManagedRules);
+    const stableId = clean(video.video_id || video.aweme_id || video.item_id);
+
+    return {
+      ...video,
+      stable_id: stableId,
+      source_video_id: stableId,
+      matched_rules: matchedRules,
+      normalized_content_key: buildNormalizedContentKey(video, matchedRules),
+    };
+  });
+}
+
+export function buildNormalizedContentKey(video, matchedRules = []) {
+  const ruleTitles = (Array.isArray(matchedRules) ? matchedRules : [])
+    .map((rule) => clean(rule?.rule_name || rule?.title || rule?.rule_id))
+    .filter(Boolean)
+    .sort();
+  const source = [
+    video?.desc,
+    video?.ocr_text,
+    video?.subtitle_text,
+    video?.author_name,
+    video?.frontend_name,
+    ruleTitles.join(" "),
+  ]
+    .map(clean)
+    .filter(Boolean)
+    .join(" ");
+
+  return normalizeComparableContent(source).slice(0, 240);
+}
+
+export function normalizeComparableContent(value) {
+  return clean(value)
+    .toLowerCase()
+    .replace(/#[^\s#]+/gu, "")
+    .replace(/https?:\/\/\S+/giu, "")
+    .replace(/\b(?:video|aweme|item)[-_]?\d+\b/giu, "")
+    .replace(/\d{4}[-/.年]\d{1,2}[-/.月]\d{1,2}日?/gu, "")
+    .replace(/\d{1,2}:\d{2}(?::\d{2})?/gu, "")
+    .replace(/[\s\p{P}\p{S}]+/gu, "");
+}
+
+export function getAuditDecisionKey(result) {
+  if (!result) return "unknown";
+  const status = clean(result.audit_status).toLowerCase();
+  if (["failed", "timeout", "error"].includes(status)) return "failed";
+  if (
+    result.need_human_review === true ||
+    ["建议人工复核", "需整改", "高风险退回"].includes(result.audit_result) ||
+    ["中", "高"].includes(result.risk_level)
+  ) {
+    return "human";
+  }
+  if (result.audit_result === "通过" || result.need_human_review === false) {
+    return "passed";
+  }
+  return "human";
+}
+
+export function hasUsefulEvidencePoints(result) {
+  const evidencePoints = Array.isArray(result?.evidence_points)
+    ? result.evidence_points
+    : [];
+
+  if (
+    evidencePoints.some(
+      (point) =>
+        clean(point?.text).length >= 2 && clean(point?.reason).length >= 2,
+    )
+  ) {
+    return true;
+  }
+
+  return [result?.evidence, result?.visual_evidence]
+    .map(clean)
+    .some((value) => value.length >= 6 && !isGenericRiskText(value));
+}
+
+export function isGenericRiskText(value) {
+  const text = clean(value);
+  if (!text) return true;
+  return [
+    "可能虚假宣传",
+    "可能误导消费者",
+    "可能夸大功效",
+    "可能存在违规风险",
+    "存在违规风险",
+    "涉嫌虚假宣传",
+    "风险较高",
+  ].some((phrase) => text.includes(phrase));
 }
 
 export async function auditDouyinVideosWithModel({
@@ -184,6 +350,15 @@ export function normalizeAuditResults(modelResults, auditItems) {
       risk_level: riskLevel,
       main_risks: normalizeStringArray(result.main_risks),
       hit_rules: normalizeRuleIds(result.hit_rules, item.matched_rules),
+      matched_rule_ids: normalizeRuleIds(
+        result.matched_rule_ids || result.hit_rules,
+        item.matched_rules,
+      ),
+      matched_rule_titles: normalizeRuleTitles(
+        result.matched_rule_titles,
+        item.matched_rules,
+      ),
+      matched_rule_categories: normalizeRuleCategories(item.matched_rules),
       problem_description: clean(result.problem_description),
       rectification_suggestion: clean(result.rectification_suggestion),
       need_human_review:
@@ -320,6 +495,11 @@ function fallbackAuditResult(item) {
     risk_level: riskLevel,
     main_risks: item.matched_rules.map((rule) => rule.rule_name).filter(Boolean),
     hit_rules: item.matched_rules.map((rule) => rule.rule_id).filter(Boolean),
+    matched_rule_ids: item.matched_rules.map((rule) => rule.rule_id).filter(Boolean),
+    matched_rule_titles: item.matched_rules
+      .map((rule) => rule.rule_name)
+      .filter(Boolean),
+    matched_rule_categories: normalizeRuleCategories(item.matched_rules),
     problem_description:
       item.matched_rules.length > 0
         ? "模型未返回该视频结果，已保留本地规则命中信息，建议人工复核。"
@@ -358,6 +538,19 @@ function normalizeStringArray(value) {
 function normalizeRuleIds(value, matchedRules) {
   const allowed = new Set(matchedRules.map((rule) => rule.rule_id));
   return normalizeStringArray(value).filter((ruleId) => allowed.has(ruleId));
+}
+
+function normalizeRuleTitles(value, matchedRules) {
+  const allowed = new Set(matchedRules.map((rule) => rule.rule_name));
+  return normalizeStringArray(value).filter((title) => allowed.has(title));
+}
+
+function normalizeRuleCategories(matchedRules) {
+  return [
+    ...new Set(
+      matchedRules.map((rule) => clean(rule.category)).filter(Boolean),
+    ),
+  ];
 }
 
 function clean(value) {

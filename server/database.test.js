@@ -95,13 +95,23 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
         "video-1": {
           video_id: "video-1",
           audit_result: "通过",
-          need_human_review: false,
+          need_human_review: true,
+        },
+      },
+      manualReviews: {
+        "video-1": {
+          status: "approved",
+          note: "manual approved",
+          reviewed_by: String(content.id),
+          reviewed_by_name: content.username,
+          reviewed_at: "2026-06-27T10:00:00.000Z",
         },
       },
       summary: {
         account_count: 1,
         video_count: 1,
-        filter_counts: { passed: 1 },
+        manualReviewCounts: { approved: 1 },
+        filter_counts: { human: 1 },
       },
       status: "completed",
     });
@@ -110,6 +120,8 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
     assert.equal(savedRun.created_by_name, "content");
     assert.equal(savedRun.video_count, 1);
     assert.equal(savedRun.videos[0].video_id, "video-1");
+    assert.equal(savedRun.manualReviews["video-1"].status, "approved");
+    assert.equal(savedRun.manualReviews["video-1"].note, "manual approved");
     assert.equal(
       database.getLatestAuditRun({ createdBy: content.id }).id,
       savedRun.id,
@@ -124,6 +136,7 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
     assert.equal(runList[0].created_by_name, "content");
     assert.equal(runList[0].video_count, 1);
     assert.equal(Object.hasOwn(runList[0], "videos"), false);
+    assert.equal(Object.hasOwn(runList[0], "manualReviews"), false);
     assert.equal(
       database.listAuditRuns({ createdBy: admin.id, limit: 20 }).length,
       0,
@@ -138,12 +151,19 @@ test("isolates users, logs, sessions, stats, and simplified dashboards", async (
       ...savedRun,
       createdBy: content.id,
       videos: [{ video_id: "video-2" }],
+      manualReviews: {
+        "video-2": {
+          status: "rejected",
+          note: "manual rejected",
+        },
+      },
       summary: { account_count: 1, video_count: 1 },
       status: "fetched",
     });
     assert.equal(updatedRun.id, savedRun.id);
     assert.equal(updatedRun.status, "fetched");
     assert.equal(updatedRun.videos[0].video_id, "video-2");
+    assert.equal(updatedRun.manualReviews["video-2"].status, "rejected");
     assert.throws(
       () => database.getAuditRun({ id: savedRun.id, createdBy: admin.id }),
       /无权限查看/,

@@ -1,0 +1,15 @@
+[35mserver/database.js[m[36m:[m[32m57[m[36m:[m    CREATE TABLE IF NOT EXISTS [1;31maudit_runs[m (
+[35mserver/database.js[m[36m:[m[32m105[m[36m:[m    CREATE INDEX IF NOT EXISTS idx_[1;31maudit_runs[m_user_updated
+[35mserver/database.js[m[36m:[m[32m106[m[36m:[m      ON [1;31maudit_runs[m(created_by, updated_at DESC);
+[35mserver/database.js[m[36m:[m[32m244[m[36m:[m  const columns = database.prepare("PRAGMA table_info([1;31maudit_runs[m)").all();
+[35mserver/database.js[m[36m:[m[32m248[m[36m:[m    database.exec("ALTER TABLE [1;31maudit_runs[m ADD COLUMN created_by TEXT");
+[35mserver/database.js[m[36m:[m[32m253[m[36m:[m      "ALTER TABLE [1;31maudit_runs[m ADD COLUMN created_by_name TEXT NOT NULL DEFAULT ''",
+[35mserver/database.js[m[36m:[m[32m681[m[36m:[m    .prepare("SELECT id, created_at, created_by FROM [1;31maudit_runs[m WHERE id = ?")
+[35mserver/database.js[m[36m:[m[32m720[m[36m:[m              .prepare("SELECT created_by_name FROM [1;31maudit_runs[m WHERE id = ?")
+[35mserver/database.js[m[36m:[m[32m726[m[36m:[m        UPDATE [1;31maudit_runs[m
+[35mserver/database.js[m[36m:[m[32m744[m[36m:[m        INSERT INTO [1;31maudit_runs[m
+[35mserver/database.js[m[36m:[m[32m767[m[36m:[m      FROM [1;31maudit_runs[m
+[35mserver/database.js[m[36m:[m[32m789[m[36m:[m      FROM [1;31maudit_runs[m
+[35mserver/database.js[m[36m:[m[32m801[m[36m:[m    .prepare("SELECT * FROM [1;31maudit_runs[m WHERE id = ?")
+[35mserver/database.js[m[36m:[m[32m817[m[36m:[m    .prepare("SELECT id, created_by FROM [1;31maudit_runs[m WHERE id = ?")
+[35mserver/database.js[m[36m:[m[32m829[m[36m:[m    .prepare("DELETE FROM [1;31maudit_runs[m WHERE id = ?")

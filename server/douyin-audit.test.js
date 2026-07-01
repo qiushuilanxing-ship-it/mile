@@ -8,6 +8,7 @@ import {
   formatBeijingTime,
   normalizeAccountTaskRangeType,
   normalizeSecUid,
+  parseDateInput,
   resolveAccountTaskRangeInput,
   resolveDouyinRange,
 } from "./douyin-audit.js";
@@ -95,6 +96,31 @@ test("validates custom date ranges", () => {
       }),
     DouyinRangeError,
   );
+});
+
+test("normalizes slash custom dates and includes the end date", () => {
+  assert.equal(parseDateInput("06/26/2026"), "2026-06-26");
+  assert.equal(parseDateInput("6/28/2026"), "2026-06-28");
+  assert.equal(parseDateInput("2026-02-31"), "");
+
+  const range = resolveDouyinRange({
+    rangeType: "custom",
+    startDate: "06/26/2026",
+    endDate: "06/28/2026",
+  });
+
+  assert.equal(range.startDate, "2026-06-26");
+  assert.equal(range.endDate, "2026-06-28");
+  assert.equal(range.endTime - range.startTime, 3 * 24 * 60 * 60 - 1);
+});
+
+test("does not limit mapped videos to 50 by default", () => {
+  const awemeList = Array.from({ length: 60 }, (_, index) => ({
+    aweme_id: `video-${index + 1}`,
+    create_time: 1_700_000_000 + index,
+  }));
+
+  assert.equal(buildDouyinVideos(awemeList).length, 60);
 });
 
 test("normalizes invisible characters from secUid", () => {
