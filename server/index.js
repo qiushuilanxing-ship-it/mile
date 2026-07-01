@@ -117,6 +117,7 @@ const ACCOUNT_FETCH_BUDGET_MS = {
   recent30: 240_000,
   custom: 240_000,
 };
+const RESPONSE_SOFT_BUDGET_MS = 105_000;
 const maxVideoSize = 100 * 1024 * 1024;
 const maxImageSize = 20 * 1024 * 1024;
 const configuredMaxImageCount = Number(process.env.MAX_IMAGE_COUNT);
@@ -726,9 +727,12 @@ app.post("/api/audit/douyin-account", async (request, response) => {
   });
 
   try {
+    const requestStartedAt = Date.now();
     const accounts = [];
     const videos = [];
     let totalFetched = 0;
+    let requestStopReason = "completed";
+    let requestPartial = false;
 
     for (
       let accountIndex = 0;
@@ -741,6 +745,26 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         task,
         defaultRange,
       );
+
+      if (
+        shouldStopForResponseBudget({
+          requestStartedAt,
+          collectedVideoCount: videos.length,
+        })
+      ) {
+        requestStopReason = "time_budget_partial";
+        requestPartial = true;
+        accounts.push(
+          ...buildPendingRetryAccounts({
+            accountTasks,
+            startIndex: accountIndex,
+            defaultRange,
+            message:
+              "\u672a\u7ee7\u7eed\u5904\u7406\uff1a\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5",
+          }),
+        );
+        break;
+      }
 
       console.log("[Douyin Account Fetch] account_index:", accountIndex + 1);
       console.log(
@@ -784,10 +808,32 @@ app.post("/api/audit/douyin-account", async (request, response) => {
           range: accountRange,
           profile: task.profile,
           profileMatched: task.profileMatched,
+          requestStartedAt,
+          responseSoftBudgetMs: RESPONSE_SOFT_BUDGET_MS,
+          getCollectedVideoCount: () => videos.length,
         });
         accounts.push(account);
         videos.push(...account.videos);
         totalFetched += account.totalFetched;
+        if (
+          account.status === "partial_success" &&
+          account.debug?.stopReason === "time_budget_partial"
+        ) {
+          requestStopReason = "time_budget_partial";
+          requestPartial = true;
+          if (accountIndex + 1 < accountTasks.length) {
+            accounts.push(
+              ...buildPendingRetryAccounts({
+                accountTasks,
+                startIndex: accountIndex + 1,
+                defaultRange,
+                message:
+                  "\u672a\u7ee7\u7eed\u5904\u7406\uff1a\u672c\u6b21\u8bf7\u6c42\u8017\u65f6\u8f83\u957f\uff0c\u8bf7\u7a0d\u540e\u91cd\u8bd5",
+              }),
+            );
+          }
+          break;
+        }
       } catch (accountError) {
         const accountMessage = getDouyinAccountErrorMessage(accountError);
         const failedDebug = accountError.douyinDebug
@@ -854,7 +900,19 @@ app.post("/api/audit/douyin-account", async (request, response) => {
     videos.forEach((video, index) => {
       video.index = index + 1;
     });
+    const overallPartial =
+      requestPartial ||
+      accounts.some((account) =>
+        ["partial_success", "pending_retry"].includes(account.status),
+      );
     const responsePayload = {
+      status: overallPartial ? "partial_success" : "success",
+      ...(overallPartial
+        ? {
+            message:
+              "\u5df2\u83b7\u53d6\u90e8\u5206\u4f5c\u54c1\uff0c\u56e0\u8017\u65f6\u8f83\u957f\u5df2\u63d0\u524d\u505c\u6b62\uff0c\u53ef\u7a0d\u540e\u91cd\u8bd5\u7ee7\u7eed\u83b7\u53d6\u3002",
+          }
+        : {}),
       count: videos.length,
       videos,
       accounts: accounts.map(
@@ -868,8 +926,10 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         failed_count: accounts.filter((account) => account.status === "failed")
           .length,
         partial_count: accounts.filter(
-          (account) => account.status === "partial_success",
+          (account) =>
+            ["partial_success", "pending_retry"].includes(account.status),
         ).length,
+        total_videos: videos.length,
       },
       defaultRange: {
         rangeType: defaultRange.rangeType,
@@ -887,6 +947,8 @@ app.post("/api/audit/douyin-account", async (request, response) => {
         maxVideos: getRangeMaxVideos(defaultRange.rangeType),
         pageTimeoutMs: CRAWLER_PAGE_TIMEOUT_MS,
         accountFetchBudgetMs: getAccountFetchBudgetMs(defaultRange.rangeType),
+        responseSoftBudgetMs: RESPONSE_SOFT_BUDGET_MS,
+        elapsedMs: Date.now() - requestStartedAt,
         accounts: accounts.map((account) => account.debug).filter(Boolean),
         pageCount: accounts.reduce(
           (sum, account) => sum + (Number(account.debug?.pageCount) || 0),
@@ -907,10 +969,12 @@ app.post("/api/audit/douyin-account", async (request, response) => {
           0,
         ),
         returnedCount: videos.length,
-        stopReason:
-          accounts.length === 1
+        stopReason: requestPartial
+          ? requestStopReason
+          : accounts.length === 1
             ? accounts[0]?.debug?.stopReason
             : "multiple_accounts",
+        partial: overallPartial,
       },
     };
 
@@ -1028,6 +1092,9 @@ async function fetchDouyinAccountVideos({
   range,
   profile,
   profileMatched,
+  requestStartedAt,
+  responseSoftBudgetMs = RESPONSE_SOFT_BUDGET_MS,
+  getCollectedVideoCount = () => 0,
 }) {
   const uniqueAwemes = new Map();
   const pageLimit = PAGE_LIMIT;
@@ -1042,6 +1109,17 @@ async function fetchDouyinAccountVideos({
 
   for (let offset = 0; ; offset += pageLimit) {
     const totalElapsedBeforePage = Date.now() - startedAt;
+
+    if (
+      shouldStopForResponseBudget({
+        requestStartedAt,
+        responseSoftBudgetMs,
+        collectedVideoCount: getCollectedVideoCount() + dateMatchedIds.size,
+      })
+    ) {
+      stopReason = "time_budget_partial";
+      break;
+    }
 
     if (totalElapsedBeforePage >= accountBudgetMs) {
       stopReason = dateMatchedIds.size > 0 ? "timeout_partial" : "crawler_timeout";
@@ -1165,6 +1243,14 @@ async function fetchDouyinAccountVideos({
         stopReason = "reached_start_date";
       } else if (validatedAwemes.length < pageLimit) {
         stopReason = "no_more_data";
+      } else if (
+        shouldStopForResponseBudget({
+          requestStartedAt,
+          responseSoftBudgetMs,
+          collectedVideoCount: getCollectedVideoCount() + dateMatchedIds.size,
+        })
+      ) {
+        stopReason = "time_budget_partial";
       } else if (Date.now() - startedAt >= accountBudgetMs) {
         stopReason = dateMatchedIds.size > 0 ? "timeout_partial" : "crawler_timeout";
       } else {
@@ -1307,6 +1393,7 @@ async function fetchCrawlerPage(requestUrl, timeoutMs) {
 
 function isPartialStopReason(stopReason) {
   return [
+    "time_budget_partial",
     "timeout_partial",
     "page_timeout_partial",
     "crawler_error_partial",
@@ -1314,11 +1401,77 @@ function isPartialStopReason(stopReason) {
 }
 
 function buildPartialFetchMessage(count, stopReason) {
+  if (stopReason === "time_budget_partial") {
+    return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0\u8017\u65f6\u8f83\u957f\u5df2\u63d0\u524d\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
+  }
+
   if (["timeout_partial", "page_timeout_partial"].includes(stopReason)) {
     return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0 crawler \u54cd\u5e94\u8d85\u65f6\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
   }
 
   return "\u5df2\u83b7\u53d6 " + count + " \u6761\u4f5c\u54c1\uff0c\u56e0 crawler \u5f02\u5e38\u505c\u6b62\uff0c\u7ed3\u679c\u53ef\u80fd\u4e0d\u5b8c\u6574";
+}
+
+function shouldStopForResponseBudget({
+  requestStartedAt,
+  responseSoftBudgetMs = RESPONSE_SOFT_BUDGET_MS,
+  collectedVideoCount = 0,
+}) {
+  return (
+    Number.isFinite(requestStartedAt) &&
+    collectedVideoCount > 0 &&
+    Date.now() - requestStartedAt >= responseSoftBudgetMs
+  );
+}
+
+function buildPendingRetryAccounts({
+  accountTasks,
+  startIndex,
+  defaultRange,
+  message,
+}) {
+  return accountTasks.slice(startIndex).map((task, index) => {
+    const rangeInput = resolveAccountTaskRangeInput(task, defaultRange);
+    let rangeLabel;
+    let rangeType = rangeInput.rangeType;
+
+    try {
+      const range = resolveDouyinRange(rangeInput);
+      rangeLabel = formatRangeLabel(range);
+      rangeType = range.rangeType;
+    } catch {
+      rangeLabel = getTaskRangeLabel(task, defaultRange);
+    }
+
+    return {
+      account_index: startIndex + index + 1,
+      secUid: task.secUid,
+      author_name: "",
+      ...pickAccountProfileFields(task.profile),
+      profile_matched: task.profileMatched,
+      range_label: rangeLabel,
+      range_type: rangeType,
+      count: 0,
+      status: "pending_retry",
+      message,
+      videos: [],
+      totalFetched: 0,
+      debug: {
+        secUid: task.secUid,
+        rangeType,
+        pageLimit: PAGE_LIMIT,
+        maxVideos: getRangeMaxVideos(rangeType),
+        pageCount: 0,
+        rawFetchedCount: 0,
+        dateMatchedCount: 0,
+        dedupedCount: 0,
+        returnedCount: 0,
+        elapsedMs: 0,
+        stopReason: "time_budget_partial",
+        partial: true,
+      },
+    };
+  });
 }
 
 function getRangeMaxVideos(rangeType) {

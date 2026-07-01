@@ -1689,7 +1689,8 @@ export default function DouyinAuditPage({ user }) {
     successAccounts: accounts.filter((account) => account.status === "success")
       .length,
     partialAccounts: accounts.filter(
-      (account) => account.status === "partial_success",
+      (account) =>
+        ["partial_success", "pending_retry"].includes(account.status),
     ).length,
     failedAccounts: accounts.filter((account) => account.status === "failed")
       .length,
@@ -1708,10 +1709,11 @@ export default function DouyinAuditPage({ user }) {
   const feedbackCounts = getFeedbackCounts(accountFilteredVideos, feedbacks);
   const failedRetryVideos = accountFilteredVideos.filter(isVideoAuditFailed);
   const partialFetchAccounts = accounts.filter(
-    (account) => account.status === "partial_success",
+    (account) =>
+      ["partial_success", "pending_retry"].includes(account.status),
   );
   const retryableFetchAccounts = accounts.filter((account) =>
-    ["failed", "partial_success"].includes(account.status),
+    ["failed", "partial_success", "pending_retry"].includes(account.status),
   );
   const querySummary = buildQuerySummary({
     accountCount: accountTasks.length || recognizedSecUids.length,
@@ -4452,7 +4454,9 @@ function buildPersistedRunSummary({
   return {
     account_count: accounts.length,
     success_account_count: accounts.filter((account) => account.status === "success").length,
-    partial_account_count: accounts.filter((account) => account.status === "partial_success").length,
+    partial_account_count: accounts.filter((account) =>
+      ["partial_success", "pending_retry"].includes(account.status),
+    ).length,
     failed_account_count: accounts.filter((account) => account.status === "failed").length,
     video_count: videos.length,
     total: videos.length,
@@ -4962,6 +4966,7 @@ function getTaskStatusLabel(value) {
     loading: "\u83b7\u53d6\u4e2d",
     success: "\u5df2\u5b8c\u6210",
     partial_success: "\u90e8\u5206\u83b7\u53d6",
+    pending_retry: "\u5f85\u91cd\u8bd5",
     failed: "\u5931\u8d25",
   }[value] ?? "\u5f85\u83b7\u53d6";
 }
@@ -4973,6 +4978,10 @@ function getAccountFetchStatusText(account) {
 
   if (account.status === "partial_success") {
     return "\u90e8\u5206\u83b7\u53d6\uff1a" + (account.message || ("\u5df2\u83b7\u53d6 " + account.count + " \u6761"));
+  }
+
+  if (account.status === "pending_retry") {
+    return "\u5f85\u91cd\u8bd5\uff1a" + (account.message || "\u672c\u6b21\u6682\u672a\u5904\u7406");
   }
 
   return "\u5931\u8d25\uff1a" + (account.message || "\u83b7\u53d6\u5931\u8d25");

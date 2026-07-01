@@ -4123,6 +4123,11 @@ textarea:focus {
   background: #fff7db;
 }
 
+.douyin-account-strip span.pending_retry {
+  color: #7a4a08;
+  background: #fff7db;
+}
+
 .douyin-account-strip small {
   margin-left: auto;
   color: #9995a2;
